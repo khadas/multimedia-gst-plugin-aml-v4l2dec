@@ -41,9 +41,9 @@ GST_DEBUG_CATEGORY_STATIC(gst_aml_v4l2_video_dec_debug);
 #undef GST_VIDEO_DECODER_STREAM_LOCK
 #define GST_VIDEO_DECODER_STREAM_LOCK(decoder)                      \
     {                                                               \
-        GST_DEBUG("aml v4l2 dec locking");                          \
+        GST_INFO("aml v4l2 dec locking");                          \
         g_rec_mutex_lock(&GST_VIDEO_DECODER(decoder)->stream_lock); \
-        GST_DEBUG("aml v4l2 dec locked");                           \
+        GST_INFO("aml v4l2 dec locked");                           \
     }
 #endif
 
@@ -51,8 +51,9 @@ GST_DEBUG_CATEGORY_STATIC(gst_aml_v4l2_video_dec_debug);
 #undef GST_VIDEO_DECODER_STREAM_UNLOCK
 #define GST_VIDEO_DECODER_STREAM_UNLOCK(decoder)                      \
     {                                                                 \
+        GST_INFO("aml v4l2 dec unlocking");                           \
         g_rec_mutex_unlock(&GST_VIDEO_DECODER(decoder)->stream_lock); \
-        GST_DEBUG("aml v4l2 dec unlocked");                           \
+        GST_INFO("aml v4l2 dec unlocked");                           \
     }
 #endif
 typedef struct
