@@ -28,7 +28,7 @@
 #include <gstamlv4l2object.h>
 #include <gstamlv4l2bufferpool.h>
 
-#define GST_IMPORT_LGE_PROP FALSE
+#define GST_IMPORT_LGE_PROP 0
 
 G_BEGIN_DECLS
 
