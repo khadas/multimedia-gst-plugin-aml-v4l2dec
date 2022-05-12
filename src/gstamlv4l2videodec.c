@@ -41,9 +41,9 @@ GST_DEBUG_CATEGORY_STATIC(gst_aml_v4l2_video_dec_debug);
 #undef GST_VIDEO_DECODER_STREAM_LOCK
 #define GST_VIDEO_DECODER_STREAM_LOCK(decoder)                      \
     {                                                               \
-        GST_INFO("aml v4l2 dec locking");                          \
+        GST_INFO("aml v4l2 dec locking");                           \
         g_rec_mutex_lock(&GST_VIDEO_DECODER(decoder)->stream_lock); \
-        GST_INFO("aml v4l2 dec locked");                           \
+        GST_INFO("aml v4l2 dec locked");                            \
     }
 #endif
 
@@ -53,9 +53,31 @@ GST_DEBUG_CATEGORY_STATIC(gst_aml_v4l2_video_dec_debug);
     {                                                                 \
         GST_INFO("aml v4l2 dec unlocking");                           \
         g_rec_mutex_unlock(&GST_VIDEO_DECODER(decoder)->stream_lock); \
-        GST_INFO("aml v4l2 dec unlocked");                           \
+        GST_INFO("aml v4l2 dec unlocked");                            \
     }
 #endif
+
+#if GST_IMPORT_LGE_PROP
+typedef struct _GstAmlResourceInfo
+{
+    gchar *coretype;
+    gint videoport;
+    gint audioport;
+    gint maxwidth;
+    gint maxheight;
+    gint mixerport;
+} GstAmlResourceInfo;
+
+struct _GstAmlV4l2VideoDecLgeCtxt
+{
+    GstAmlResourceInfo res_info;
+    guint64 dec_size;
+    guint64 undec_size;
+    gchar *app_type;
+    gboolean clip_mode;
+};
+#endif
+
 typedef struct
 {
     gchar *device;
@@ -68,7 +90,14 @@ typedef struct
 enum
 {
     PROP_0,
-    V4L2_STD_OBJECT_PROPS
+    V4L2_STD_OBJECT_PROPS,
+#if GST_IMPORT_LGE_PROP
+    LGE_RESOURCE_INFO,
+    LGE_DECODE_SIZE,
+    LGE_UNDECODE_SIZE,
+    LGE_APP_TYPE,
+    LGE_CLIP_MODE
+#endif
 };
 
 #define gst_aml_v4l2_video_dec_parent_class parent_class
@@ -76,6 +105,9 @@ G_DEFINE_ABSTRACT_TYPE(GstAmlV4l2VideoDec, gst_aml_v4l2_video_dec,
                        GST_TYPE_VIDEO_DECODER);
 
 static GstFlowReturn gst_aml_v4l2_video_dec_finish(GstVideoDecoder *decoder);
+#if GST_IMPORT_LGE_PROP
+static void gst_aml_v4l2_video_dec_install_lge_properties_helper(GObjectClass *gobject_class);
+#endif
 
 static void
 gst_aml_v4l2_video_dec_set_property(GObject *object,
@@ -99,7 +131,47 @@ gst_aml_v4l2_video_dec_set_property(GObject *object,
             G_OBJECT_WARN_INVALID_PROPERTY_ID(object, prop_id, pspec);
         }
         break;
-
+#if GST_IMPORT_LGE_PROP
+    case LGE_RESOURCE_INFO:
+    {
+        GST_DEBUG_OBJECT(self, "LGE up layer set res info");
+        GstStructure *r_info = g_value_get_object(value);
+        if (r_info)
+        {
+            if (gst_structure_has_field(r_info, "coretype"))
+            {
+                if (self->lge_ctxt->res_info.coretype)
+                    g_free(self->lge_ctxt->res_info.coretype);
+                self->lge_ctxt->res_info.coretype = g_strdup(gst_structure_get_string(r_info, "coretype"));
+            }
+            if (gst_structure_has_field(r_info, "videoport"))
+                gst_structure_get_int(r_info, "videoport", &(self->lge_ctxt->res_info.videoport));
+            if (gst_structure_has_field(r_info, "audioport"))
+                gst_structure_get_int(r_info, "audioport", &(self->lge_ctxt->res_info.audioport));
+            if (gst_structure_has_field(r_info, "maxwidth"))
+                gst_structure_get_int(r_info, "maxwidth", &(self->lge_ctxt->res_info.maxwidth));
+            if (gst_structure_has_field(r_info, "maxheight"))
+                gst_structure_get_int(r_info, "maxheight", &(self->lge_ctxt->res_info.maxheight));
+            if (gst_structure_has_field(r_info, "mixerport"))
+                gst_structure_get_int(r_info, "mixerport", &(self->lge_ctxt->res_info.mixerport));
+        }
+        break;
+    }
+    case LGE_APP_TYPE:
+    {
+        GST_DEBUG_OBJECT(self, "LGE up layer set app type");
+        if (self->lge_ctxt->app_type)
+            g_free(self->lge_ctxt->app_type);
+        self->lge_ctxt->app_type = g_strdup(g_value_get_string(value));
+        break;
+    }
+    case LGE_CLIP_MODE:
+    {
+        GST_DEBUG_OBJECT(self, "LGE up layer set clip mode");
+        self->lge_ctxt->clip_mode = g_strdup(g_value_get_boolean(value));
+        break;
+    }
+#endif
         /* By default, only set on output */
     default:
         if (!gst_aml_v4l2_object_set_property_helper(self->v4l2output,
@@ -126,6 +198,23 @@ gst_aml_v4l2_video_dec_get_property(GObject *object,
             G_OBJECT_WARN_INVALID_PROPERTY_ID(object, prop_id, pspec);
         }
         break;
+
+#if GST_IMPORT_LGE_PROP
+    case LGE_DECODE_SIZE:
+    {
+        GST_DEBUG_OBJECT(self, "LGE up layer get dec size");
+        self->lge_ctxt->dec_size = -1;
+        g_value_set_int(value, self->lge_ctxt->dec_size);
+        break;
+    }
+    case LGE_UNDECODE_SIZE:
+    {
+        GST_DEBUG_OBJECT(self, "LGE up layer get undec size");
+        self->lge_ctxt->undec_size = -1;
+        g_value_set_int(value, self->lge_ctxt->undec_size);
+        break;
+    }
+#endif
 
         /* By default read from output */
     default:
@@ -1090,6 +1179,18 @@ gst_aml_v4l2_video_dec_finalize(GObject *object)
     gst_aml_v4l2_object_destroy(self->v4l2capture);
     gst_aml_v4l2_object_destroy(self->v4l2output);
 
+#if GST_IMPORT_LGE_PROP
+    if (self->lge_ctxt)
+    {
+        if (self->lge_ctxt->app_type)
+            g_free(self->lge_ctxt->app_type);
+        if (self->lge_ctxt->res_info.coretype)
+            g_free(self->lge_ctxt->res_info.coretype);
+        free(self->lge_ctxt);
+    }
+
+#endif
+
     G_OBJECT_CLASS(parent_class)->finalize(object);
 }
 
@@ -1098,6 +1199,10 @@ gst_aml_v4l2_video_dec_init(GstAmlV4l2VideoDec *self)
 {
     /* V4L2 object are created in subinstance_init */
     self->is_secure_path = FALSE;
+#if GST_IMPORT_LGE_PROP
+    self->lge_ctxt = malloc(sizeof(GstAmlV4l2VideoDecLgeCtxt));
+    memset(self->lge_ctxt, 0, sizeof(GstAmlV4l2VideoDecLgeCtxt));
+#endif
 }
 
 static void
@@ -1173,6 +1278,9 @@ gst_aml_v4l2_video_dec_class_init(GstAmlV4l2VideoDecClass *klass)
         GST_DEBUG_FUNCPTR(gst_aml_v4l2_video_dec_change_state);
 
     gst_aml_v4l2_object_install_m2m_properties_helper(gobject_class);
+#if GST_IMPORT_LGE_PROP
+    gst_aml_v4l2_video_dec_install_lge_properties_helper(gobject_class);
+#endif
 }
 
 static void
@@ -1385,3 +1493,38 @@ void gst_aml_v4l2_video_dec_register(GstPlugin *plugin, const gchar *basename,
         g_free(type_name);
     }
 }
+
+#if GST_IMPORT_LGE_PROP
+static void gst_aml_v4l2_video_dec_install_lge_properties_helper(GObjectClass *gobject_class)
+{
+    g_object_class_install_property(gobject_class, LGE_RESOURCE_INFO,
+                                    g_param_spec_object("resource-info", "resource-info",
+                                                        "After acquisition of H/W resources is completed, allocated resource information must be delivered to the decoder and the sink",
+                                                        GST_TYPE_STRUCTURE,
+                                                        G_PARAM_READABLE | G_PARAM_CONSTRUCT | G_PARAM_STATIC_STRINGS));
+
+    g_object_class_install_property(gobject_class, LGE_DECODE_SIZE,
+                                    g_param_spec_uint64("decoded-size", "decoded-size",
+                                                        "The total amount of decoder element's decoded video es after constructing pipeline or flushing pipeline update unit is byte.",
+                                                        0, G_MAXUINT64,
+                                                        0, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+
+    g_object_class_install_property(gobject_class, LGE_UNDECODE_SIZE,
+                                    g_param_spec_uint64("undecoded-size", "undecoded-size",
+                                                        "video decoder element's total undecoded data update unit is byte.",
+                                                        0, G_MAXUINT64,
+                                                        0, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+
+    g_object_class_install_property(gobject_class, LGE_APP_TYPE,
+                                    g_param_spec_string("app-type", "app-type",
+                                                        "set application type.",
+                                                        "default_app",
+                                                        G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+
+    g_object_class_install_property(gobject_class, LGE_CLIP_MODE,
+                                    g_param_spec_boolean("clip-mode", "clip-mode",
+                                                         "When seeking, Content is moving faster for a while to skip frames.",
+                                                         FALSE,
+                                                         G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+}
+#endif

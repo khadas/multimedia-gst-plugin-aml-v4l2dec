@@ -28,6 +28,8 @@
 #include <gstamlv4l2object.h>
 #include <gstamlv4l2bufferpool.h>
 
+#define GST_IMPORT_LGE_PROP FALSE
+
 G_BEGIN_DECLS
 
 #define GST_TYPE_AML_V4L2_VIDEO_DEC \
@@ -42,6 +44,9 @@ G_BEGIN_DECLS
     (G_TYPE_CHECK_CLASS_TYPE((klass), GST_TYPE_AML_V4L2_VIDEO_DEC))
 
 typedef struct _GstAmlV4l2VideoDec GstAmlV4l2VideoDec;
+#if GST_IMPORT_LGE_PROP
+typedef struct _GstAmlV4l2VideoDecLgeCtxt GstAmlV4l2VideoDecLgeCtxt;
+#endif
 typedef struct _GstAmlV4l2VideoDecClass GstAmlV4l2VideoDecClass;
 
 struct _GstAmlV4l2VideoDec
@@ -63,6 +68,11 @@ struct _GstAmlV4l2VideoDec
 
     /* flags */
     gboolean is_secure_path;
+
+#if GST_IMPORT_LGE_PROP
+    /* LGE context */
+    GstAmlV4l2VideoDecLgeCtxt *lge_ctxt;
+#endif
 };
 
 struct _GstAmlV4l2VideoDecClass
