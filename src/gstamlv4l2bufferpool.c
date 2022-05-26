@@ -1334,7 +1334,10 @@ gst_aml_v4l2_buffer_pool_dqevent(GstAmlV4l2BufferPool *pool)
     switch (evt.type)
     {
     case V4L2_EVENT_SOURCE_CHANGE:
-        return GST_AML_V4L2_FLOW_SOURCE_CHANGE;
+
+        if (evt.u.src_change.changes & V4L2_EVENT_SRC_CH_RESOLUTION)
+            return GST_AML_V4L2_FLOW_SOURCE_CHANGE;
+        GST_WARNING_OBJECT (pool, "Unknown source change 0x%x - skipped", evt.u.src_change.changes);
         break;
     case V4L2_EVENT_EOS:
         return GST_AML_V4L2_FLOW_LAST_BUFFER;
@@ -1536,7 +1539,9 @@ gst_aml_v4l2_buffer_pool_dequeue(GstAmlV4l2BufferPool *pool, GstBuffer **buffer,
 
     if (obj->can_wait_event && gst_poll_fd_can_read_pri(pool->poll, &pool->pollfd))
     {
-        return gst_aml_v4l2_buffer_pool_dqevent(pool);
+        GstFlowReturn res_event = gst_aml_v4l2_buffer_pool_dqevent(pool);
+        if (res_event != GST_FLOW_OK)
+            return res_event;
     }
 
     if (res == GST_FLOW_CUSTOM_SUCCESS)
@@ -1969,9 +1974,14 @@ gst_aml_v4l2_buffer_pool_new(GstAmlV4l2Object *obj, GstCaps *caps)
     pool->pollfd.fd = fd;
     gst_poll_add_fd(pool->poll, &pool->pollfd);
     if (V4L2_TYPE_IS_OUTPUT(obj->type))
+    {
         gst_poll_fd_ctl_write(pool->poll, &pool->pollfd, TRUE);
+    }
     else
+    {
         gst_poll_fd_ctl_read(pool->poll, &pool->pollfd, TRUE);
+        gst_poll_fd_ctl_pri (pool->poll, &pool->pollfd, TRUE);
+    }
 
     pool->video_fd = fd;
     pool->obj = obj;

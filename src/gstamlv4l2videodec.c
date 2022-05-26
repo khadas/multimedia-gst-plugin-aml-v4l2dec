@@ -781,6 +781,13 @@ gst_aml_v4l2_video_dec_loop(GstVideoDecoder *decoder)
         ret = gst_buffer_pool_acquire_buffer(pool, &buffer, NULL);
         g_object_unref(pool);
 
+        if (ret == GST_AML_V4L2_FLOW_SOURCE_CHANGE)
+        {
+            GST_LOG_OBJECT(decoder, "Get GST_AML_V4L2_FLOW_SOURCE_CHANGE");
+            gst_aml_v4l2_object_stop(self->v4l2capture);
+            return;
+        }
+
         if (ret != GST_FLOW_OK)
             goto beach;
 
