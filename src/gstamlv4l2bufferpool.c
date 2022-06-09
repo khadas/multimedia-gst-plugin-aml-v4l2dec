@@ -360,9 +360,13 @@ gst_aml_v4l2_buffer_pool_import_dmabuf(GstAmlV4l2BufferPool *pool,
                                               dma_mem))
         goto import_failed;
 
-    // gst_mini_object_set_qdata(GST_MINI_OBJECT(dest), GST_AML_V4L2_IMPORT_QUARK,
-    //                           gst_buffer_ref(src), (GDestroyNotify)gst_buffer_unref);
-    gst_mini_object_set_qdata(GST_MINI_OBJECT(dest), GST_AML_V4L2_IMPORT_QUARK, gst_buffer_ref(src), NULL);
+    // Output buf is secure memory, Need to unref by itselt
+    // Capture buf is secure memory, Need to unref by downstreaming element gstvideosink
+    if (V4L2_TYPE_IS_OUTPUT (pool->obj->type))
+        gst_mini_object_set_qdata(GST_MINI_OBJECT(dest), GST_AML_V4L2_IMPORT_QUARK,
+                               gst_buffer_ref(src), (GDestroyNotify)gst_buffer_unref);
+    else
+        gst_mini_object_set_qdata(GST_MINI_OBJECT(dest), GST_AML_V4L2_IMPORT_QUARK, gst_buffer_ref(src), NULL);
 
     gst_buffer_copy_into(dest, src,
                          GST_BUFFER_COPY_FLAGS | GST_BUFFER_COPY_TIMESTAMPS, 0, -1);
