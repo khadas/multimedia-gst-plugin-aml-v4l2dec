@@ -1323,6 +1323,12 @@ gst_aml_v4l2_allocator_qbuf(GstAmlV4l2Allocator *allocator,
     for (i = 0; i < group->n_mem; i++)
         gst_memory_ref(group->mem[i]);
 
+    gint64 currFramePTS= 0;
+    if (group->buffer.timestamp.tv_sec != -1) {
+        currFramePTS= group->buffer.timestamp.tv_sec * 1000000LL + group->buffer.timestamp.tv_usec;
+    }
+    GST_LOG_OBJECT(allocator, "q buffer, timestamp:%lld",currFramePTS);
+
     if (obj->ioctl(obj->video_fd, VIDIOC_QBUF, &group->buffer) < 0)
     {
         GST_ERROR_OBJECT(allocator, "failed queueing buffer %i: %s",

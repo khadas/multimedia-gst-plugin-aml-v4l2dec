@@ -612,6 +612,43 @@ gst_aml_v4l2_video_dec_get_oldest_frame(GstVideoDecoder *decoder)
     return frame;
 }
 
+static GstVideoCodecFrame *
+gst_aml_v4l2_video_dec_get_right_frame(GstVideoDecoder *decoder, GstClockTime pts)
+{
+    GstVideoCodecFrame *frame = NULL;
+    GList *frames, *l;
+    gint count = 0;
+
+    frames = gst_video_decoder_get_frames(decoder);
+
+    for (l = frames; l != NULL; l = l->next)
+    {
+        GstVideoCodecFrame *f = l->data;
+
+        if (GST_CLOCK_TIME_IS_VALID(pts) && (ABS(f->pts - pts)) < 10) {
+            frame = f;
+            break;
+        } else {
+            if (!frame || (GST_CLOCK_TIME_IS_VALID(frame->pts) && GST_CLOCK_TIME_IS_VALID(f->pts) && (frame->pts > f->pts)))
+                frame = f;
+        }
+
+        count++;
+    }
+
+    if (frame)
+    {
+        GST_LOG_OBJECT(decoder,
+                       "frame is %d %" GST_TIME_FORMAT " and %d frames left",
+                       frame->system_frame_number, GST_TIME_ARGS(frame->pts), count - 1);
+        gst_video_codec_frame_ref(frame);
+    }
+
+    g_list_free_full(frames, (GDestroyNotify)gst_video_codec_frame_unref);
+
+    return frame;
+}
+
 static gboolean
 gst_aml_v4l2_video_remove_padding(GstCapsFeatures *features,
                                   GstStructure *structure, gpointer user_data)
@@ -774,6 +811,7 @@ gst_aml_v4l2_video_dec_loop(GstVideoDecoder *decoder)
         /* Pool may be NULL if we started going to READY state */
         if (pool == NULL)
         {
+            GST_WARNING_OBJECT(decoder, "gst_video_decoder_get_buffer_pool goto beach");
             ret = GST_FLOW_FLUSHING;
             goto beach;
         }
@@ -788,8 +826,10 @@ gst_aml_v4l2_video_dec_loop(GstVideoDecoder *decoder)
             return;
         }
 
-        if (ret != GST_FLOW_OK)
+        if (ret != GST_FLOW_OK) {
+            GST_WARNING_OBJECT(decoder, "gst_buffer_pool_acquire_buffer goto beach ret:%d",ret);
             goto beach;
+        }
 
         GST_LOG_OBJECT(decoder, "Process output buffer");
         ret = gst_aml_v4l2_buffer_pool_process(v4l2_pool, &buffer);
@@ -804,7 +844,7 @@ gst_aml_v4l2_video_dec_loop(GstVideoDecoder *decoder)
     if (ret != GST_FLOW_OK)
         goto beach;
 
-    frame = gst_aml_v4l2_video_dec_get_oldest_frame(decoder);
+    frame = gst_aml_v4l2_video_dec_get_right_frame(decoder, GST_BUFFER_TIMESTAMP (buffer));
 
     if (frame)
     {
