@@ -216,6 +216,8 @@ struct _GstAmlV4l2Object
     gboolean can_wait_event;
     gboolean need_wait_event;
 
+    gboolean is_svp;
+
     guint tvin_port;
 
     /* the file to store dumped decoder frames */

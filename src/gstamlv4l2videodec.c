@@ -725,6 +725,23 @@ gst_aml_v4l2_video_dec_loop(GstVideoDecoder *decoder)
         }
         self->v4l2capture->need_wait_event = FALSE;
 
+        if (TRUE == self->v4l2output->is_svp)
+        {
+            GstPad *peer;
+            GstStructure *s;
+            GstEvent *event;
+
+            peer = gst_pad_get_peer (decoder->srcpad);
+            if (peer)
+            {
+              s = gst_structure_new_empty ("IS_SVP");
+              event = gst_event_new_custom (GST_EVENT_CUSTOM_DOWNSTREAM, s);
+              gst_pad_send_event (peer, event);
+              GST_DEBUG_OBJECT(self, "Send SVP Event");
+              gst_object_unref (peer);
+            }
+        }
+
         if (!gst_aml_v4l2_object_acquire_format(self->v4l2capture, &info))
             goto not_negotiated;
 
@@ -923,6 +940,14 @@ gst_aml_v4l2_video_dec_handle_frame(GstVideoDecoder *decoder,
     if (G_UNLIKELY(!GST_AML_V4L2_IS_ACTIVE(self->v4l2capture)))
     {
         GstBuffer *codec_data;
+        GstCapsFeatures *features = NULL;
+
+        features = gst_caps_get_features(self->input_state->caps, 0);
+        if (features && gst_caps_features_contains(features, GST_CAPS_FEATURE_MEMORY_DMABUF))
+        {
+            GST_DEBUG_OBJECT(self, "Is SVP");
+            self->v4l2output->is_svp = TRUE;
+        }
 
         GST_DEBUG_OBJECT(self, "Sending header");
 
@@ -1267,6 +1292,7 @@ gst_aml_v4l2_video_dec_subinstance_init(GTypeInstance *instance, gpointer g_clas
                                                gst_aml_v4l2_get_output, gst_aml_v4l2_set_output, NULL);
     self->v4l2output->no_initial_format = TRUE;
     self->v4l2output->keep_aspect = FALSE;
+    self->v4l2output->is_svp = FALSE;
 
     self->v4l2capture = gst_aml_v4l2_object_new(GST_ELEMENT(self),
                                                 GST_OBJECT(GST_VIDEO_DECODER_SRC_PAD(self)),
