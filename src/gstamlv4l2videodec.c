@@ -685,7 +685,7 @@ gst_aml_v4l2_video_remove_padding(GstCapsFeatures *features,
 }
 
 static void
-gst_v4l2_drop_event (GstV4l2Object * v4l2object)
+gst_v4l2_drop_event (GstAmlV4l2Object * v4l2object)
 {
   struct v4l2_event evt;
   gint ret;
@@ -873,7 +873,7 @@ gst_aml_v4l2_video_dec_loop(GstVideoDecoder *decoder)
         g_object_unref(pool);
 
         if (ret == GST_AML_V4L2_FLOW_LAST_BUFFER) {
-          GST_LOG_OBJECT(decoder, "Get GST_V4L2_FLOW_LAST_BUFFER");
+          GST_LOG_OBJECT(decoder, "Get GST_AML_V4L2_FLOW_LAST_BUFFER");
           self->v4l2capture->need_drop_event = TRUE;
           goto beach;
         }
