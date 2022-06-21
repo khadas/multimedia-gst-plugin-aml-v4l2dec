@@ -154,12 +154,14 @@ gst_aml_v4l2_probe_and_register(GstPlugin *plugin)
                                                                     video_fd, V4L2_BUF_TYPE_VIDEO_OUTPUT),
                                    gst_aml_v4l2_probe_template_caps(it->device_path, video_fd,
                                                                     V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE));
+        GST_DEBUG ("prob sink_caps %" GST_PTR_FORMAT, sink_caps);
 
         /* get src supported format */
         src_caps = gst_caps_merge(gst_aml_v4l2_probe_template_caps(it->device_path,
                                                                    video_fd, V4L2_BUF_TYPE_VIDEO_CAPTURE),
                                   gst_aml_v4l2_probe_template_caps(it->device_path, video_fd,
                                                                    V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE));
+        GST_DEBUG ("prob src_caps %" GST_PTR_FORMAT, src_caps);
 
         /* Skip devices without any supported formats */
         if (gst_caps_is_empty(sink_caps) || gst_caps_is_empty(src_caps))

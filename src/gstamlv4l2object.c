@@ -27,6 +27,7 @@
 #include <string.h>
 #include <sys/mman.h>
 #include <sys/ioctl.h>
+#include <stdio.h>
 
 #ifdef HAVE_GUDEV
 #include <gudev/gudev.h>
@@ -51,6 +52,11 @@ GST_DEBUG_CATEGORY_EXTERN(aml_v4l2_debug);
 
 #define ENCODED_BUFFER_SIZE (2 * 1024 * 1024)
 #define DEFAULT_EXTRA_CAPTURE_BUF_SIZE 3
+
+#define V4L2_CONFIG_PARM_DECODE_CFGINFO (1 << 0)
+#define V4L2_CONFIG_PARM_DECODE_PSINFO  (1 << 1)
+#define V4L2_CONFIG_PARM_DECODE_HDRINFO (1 << 2)
+#define V4L2_CONFIG_PARM_DECODE_CNTINFO (1 << 3)
 
 enum
 {
@@ -1937,6 +1943,8 @@ gst_aml_v4l2_object_get_colorspace(struct v4l2_format *fmt,
         matrix = fmt->fmt.pix.ycbcr_enc;
         transfer = fmt->fmt.pix.xfer_func;
     }
+    GST_DEBUG("colorspace:%d, range:%d, matrix:%d, transfer:%d", colorspace, range, matrix, transfer);
+    GST_DEBUG("cinfo update 1 time | range:%d, matrix:%d, transfer:%d, primaries:%d", cinfo->range, cinfo->matrix, cinfo->transfer, cinfo->primaries);
 
     /* First step, set the defaults for each primaries */
     switch (colorspace)
@@ -2002,6 +2010,7 @@ gst_aml_v4l2_object_get_colorspace(struct v4l2_format *fmt,
         ret = FALSE;
         break;
     }
+    GST_DEBUG("cinfo update 2 time | range:%d, matrix:%d, transfer:%d, primaries:%d", cinfo->range, cinfo->matrix, cinfo->transfer, cinfo->primaries);
 
     if (!ret)
         goto done;
@@ -2029,6 +2038,7 @@ gst_aml_v4l2_object_get_colorspace(struct v4l2_format *fmt,
         cinfo->range = GST_VIDEO_COLOR_RANGE_UNKNOWN;
         break;
     }
+    GST_DEBUG("cinfo update 3 time | range:%d, matrix:%d, transfer:%d, primaries:%d", cinfo->range, cinfo->matrix, cinfo->transfer, cinfo->primaries);
 
     switch (matrix)
     {
@@ -2062,6 +2072,7 @@ gst_aml_v4l2_object_get_colorspace(struct v4l2_format *fmt,
         cinfo->matrix = GST_VIDEO_COLOR_MATRIX_UNKNOWN;
         break;
     }
+    GST_DEBUG("cinfo update 4 time | range:%d, matrix:%d, transfer:%d, primaries:%d", cinfo->range, cinfo->matrix, cinfo->transfer, cinfo->primaries);
 
     /* Set identity matrix for R'G'B' formats to avoid creating
      * confusion. This though is cosmetic as it's now properly ignored by
@@ -2097,6 +2108,7 @@ gst_aml_v4l2_object_get_colorspace(struct v4l2_format *fmt,
         cinfo->transfer = GST_VIDEO_TRANSFER_UNKNOWN;
         break;
     }
+    GST_DEBUG("cinfo update 5 time | range:%d, matrix:%d, transfer:%d, primaries:%d", cinfo->range, cinfo->matrix, cinfo->transfer, cinfo->primaries);
 
 done:
     return ret;
@@ -2202,6 +2214,7 @@ gst_aml_v4l2_object_fill_colorimetry_list(GValue *list,
 
     g_value_init(&colorimetry, G_TYPE_STRING);
     g_value_take_string(&colorimetry, gst_video_colorimetry_to_string(cinfo));
+    GST_DEBUG("fill colorimetry:%s into list", gst_video_colorimetry_to_string(cinfo));
 
     /* only insert if no duplicate */
     size = gst_value_list_get_size(list);
@@ -2242,6 +2255,7 @@ gst_aml_v4l2_object_add_colorspace(GstAmlV4l2Object *v4l2object, GstStructure *s
 
     /* step 1: get device default colorspace and insert it first as
      * it should be the preferred one */
+    GST_DEBUG("try for pixl format");
     if (gst_aml_v4l2_object_try_fmt(v4l2object, &fmt) == 0)
     {
         if (gst_aml_v4l2_object_get_colorspace(&fmt, &cinfo))
@@ -2255,6 +2269,7 @@ gst_aml_v4l2_object_add_colorspace(GstAmlV4l2Object *v4l2object, GstStructure *s
     for (req_cspace = V4L2_COLORSPACE_SMPTE170M;
          req_cspace <= V4L2_COLORSPACE_RAW; req_cspace++)
     {
+        GST_DEBUG("try for pixl format in while loop :%d", req_cspace);
         /* V4L2_COLORSPACE_BT878 is deprecated and shall not be used, so skip */
         if (req_cspace == V4L2_COLORSPACE_BT878)
             continue;
@@ -2266,6 +2281,7 @@ gst_aml_v4l2_object_add_colorspace(GstAmlV4l2Object *v4l2object, GstStructure *s
 
         if (gst_aml_v4l2_object_try_fmt(v4l2object, &fmt) == 0)
         {
+            GST_DEBUG("try for pixl format in while loop :%d tried ok", req_cspace);
             enum v4l2_colorspace colorspace;
 
             if (V4L2_TYPE_IS_MULTIPLANAR(v4l2object->type))
@@ -2280,6 +2296,13 @@ gst_aml_v4l2_object_add_colorspace(GstAmlV4l2Object *v4l2object, GstStructure *s
             }
         }
     }
+
+    //deal: caps with colorimetry 2,3,14,7
+    cinfo.range = 2;
+    cinfo.matrix = 3;
+    cinfo.transfer = 14;
+    cinfo.primaries = 7;
+    gst_aml_v4l2_object_fill_colorimetry_list(&list, &cinfo);
 
     if (gst_value_list_get_size(&list) > 0)
         gst_structure_take_value(s, "colorimetry", &list);
@@ -3283,7 +3306,7 @@ gst_aml_v4l2_video_colorimetry_matches(const GstVideoColorimetry *cinfo,
 }
 
 static void
-set_amlogic_vdec_parm(GstAmlV4l2Object *v4l2object, struct v4l2_streamparm *streamparm)
+set_amlogic_vdec_parm(GstAmlV4l2Object *v4l2object, struct v4l2_streamparm *streamparm, GstCaps *caps)
 {
     struct aml_dec_params *decParm = (struct aml_dec_params *)streamparm->parm.raw_data;
     const char *env;
@@ -3317,6 +3340,222 @@ set_amlogic_vdec_parm(GstAmlV4l2Object *v4l2object, struct v4l2_streamparm *stre
         else
         {
             GST_DEBUG_OBJECT(v4l2object->dbg_obj, "Set dwMode to %d", decParm->cfg.double_write_mode);
+        }
+
+        GstStructure *structure= gst_caps_get_structure(caps, 0);
+        if (structure == NULL)
+        {
+            return;
+        }
+        if ( gst_structure_has_field(structure, "colorimetry") )
+        {
+            const char *colorimetry= gst_structure_get_string(structure,"colorimetry");
+            GstVideoColorimetry vci = {0};
+            if ( colorimetry &&  gst_video_colorimetry_from_string( &vci, colorimetry ))
+            {
+                decParm->parms_status |= V4L2_CONFIG_PARM_DECODE_HDRINFO;
+                decParm->hdr.signal_type= (1<<29); /* present flag */
+                /*set default value, this is to keep up with driver hdr info synchronization*/
+                decParm->hdr.signal_type |= (5<<26) | (1<<24);
+
+                gint hdrColorimetry[4] = {0};
+                hdrColorimetry[0]= (int)vci.range;
+                hdrColorimetry[1]= (int)vci.matrix;
+                hdrColorimetry[2]= (int)vci.transfer;
+                hdrColorimetry[3]= (int)vci.primaries;
+                GST_DEBUG_OBJECT(v4l2object->dbg_obj, "colorimetry: [%d,%d,%d,%d]",
+                                                        hdrColorimetry[0],
+                                                        hdrColorimetry[1],
+                                                        hdrColorimetry[2],
+                                                        hdrColorimetry[3] );
+                /* range */
+                switch ( hdrColorimetry[0] )
+                {
+                    case 1:
+                    case 2:
+                    decParm->hdr.signal_type |= ((hdrColorimetry[0] % 2)<<25);
+                    break;
+                    default:
+                    break;
+                }
+                /* matrix coefficient */
+                switch ( hdrColorimetry[1] )
+                {
+                    case 1: /* RGB */
+                    decParm->hdr.signal_type |= 0;
+                    break;
+                    case 2: /* FCC */
+                    decParm->hdr.signal_type |= 4;
+                    break;
+                    case 3: /* BT709 */
+                    decParm->hdr.signal_type |= 1;
+                    break;
+                    case 4: /* BT601 */
+                    decParm->hdr.signal_type |= 3;
+                    break;
+                    case 5: /* SMPTE240M */
+                    decParm->hdr.signal_type |= 7;
+                    break;
+                    case 6: /* BT2020 */
+                    decParm->hdr.signal_type |= 9;
+                    break;
+                    default: /* unknown */
+                    decParm->hdr.signal_type |= 2;
+                    break;
+                }
+                /* transfer function */
+                switch ( hdrColorimetry[2] )
+                {
+                    case 5: /* BT709 */
+                    decParm->hdr.signal_type |= (1<<8);
+                    break;
+                    case 6: /* SMPTE240M */
+                    decParm->hdr.signal_type |= (7<<8);
+                    break;
+                    case 9: /* LOG100 */
+                    decParm->hdr.signal_type |= (9<<8);
+                    break;
+                    case 10: /* LOG316 */
+                    decParm->hdr.signal_type |= (10<<8);
+                    break;
+                    case 12: /* BT2020_12 */
+                    decParm->hdr.signal_type |= (15<<8);
+                    break;
+                    case 11: /* BT2020_10 */
+                    decParm->hdr.signal_type |= (14<<8);
+                    break;
+                    case 13: /* SMPTE2084 */
+                    decParm->hdr.signal_type |= (16<<8);
+                    break;
+                    case 14: /* ARIB_STD_B67 */
+                    decParm->hdr.signal_type |= (18<<8);
+                    break;
+                    #if ((GST_VERSION_MAJOR == 1) && (GST_VERSION_MINOR >= 18))
+                    case 16: /* BT601 */
+                    decParm->hdr.signal_type |= (3<<8);
+                    break;
+                    #endif
+                    case 1: /* GAMMA10 */
+                    case 2: /* GAMMA18 */
+                    case 3: /* GAMMA20 */
+                    case 4: /* GAMMA22 */
+                    case 7: /* SRGB */
+                    case 8: /* GAMMA28 */
+                    case 15: /* ADOBERGB */
+                    default:
+                    break;
+                }
+                /* primaries */
+                switch ( hdrColorimetry[3] )
+                {
+                    case 1: /* BT709 */
+                    decParm->hdr.signal_type |= ((1<<24)|(1<<16));
+                    break;
+                    case 2: /* BT470M */
+                    decParm->hdr.signal_type |= ((1<<24)|(4<<16));
+                    break;
+                    case 3: /* BT470BG */
+                    decParm->hdr.signal_type |= ((1<<24)|(5<<16));
+                    break;
+                    case 4: /* SMPTE170M */
+                    decParm->hdr.signal_type |= ((1<<24)|(6<<16));
+                    break;
+                    case 5: /* SMPTE240M */
+                    decParm->hdr.signal_type |= ((1<<24)|(7<<16));
+                    break;
+                    case 6: /* FILM */
+                    decParm->hdr.signal_type |= ((1<<24)|(8<<16));
+                    break;
+                    case 7: /* BT2020 */
+                    decParm->hdr.signal_type |= ((1<<24)|(9<<16));
+                    break;
+                    case 8: /* ADOBERGB */
+                    default:
+                    break;
+                }
+                GST_DEBUG_OBJECT(v4l2object->dbg_obj, "HDR signal_type %X", decParm->hdr.signal_type);
+            }
+
+            GST_DEBUG_OBJECT(v4l2object->dbg_obj, "got caps %" GST_PTR_FORMAT, caps);
+            GstStructure *st = gst_caps_get_structure(caps, 0);
+            GstCapsFeatures *features = gst_caps_get_features(caps, 0);
+
+            if (gst_structure_has_field(st, "colorimetry"))
+            {
+                GST_DEBUG_OBJECT(v4l2object->dbg_obj, "have colorimetry");
+            }
+
+            if (st && features)
+            {
+                GST_DEBUG_OBJECT(v4l2object->dbg_obj, "trace in remove colorimetry");
+                gst_structure_remove_field(st, "colorimetry");
+                gst_caps_features_remove(features, "colorimetry");
+            }
+            GST_DEBUG_OBJECT(v4l2object->dbg_obj, "caps after remove colorimetry %" GST_PTR_FORMAT, caps);
+        }
+
+        if ( gst_structure_has_field(structure, "mastering-display-metadata") )
+        {
+            const char *masteringDisplay= gst_structure_get_string(structure,"mastering-display-metadata");
+            float hdrMasteringDisplay[10];
+            if ( masteringDisplay && sscanf( masteringDisplay, "%f:%f:%f:%f:%f:%f:%f:%f:%f:%f",
+                                                                &hdrMasteringDisplay[0],
+                                                                &hdrMasteringDisplay[1],
+                                                                &hdrMasteringDisplay[2],
+                                                                &hdrMasteringDisplay[3],
+                                                                &hdrMasteringDisplay[4],
+                                                                &hdrMasteringDisplay[5],
+                                                                &hdrMasteringDisplay[6],
+                                                                &hdrMasteringDisplay[7],
+                                                                &hdrMasteringDisplay[8],
+                                                                &hdrMasteringDisplay[9] ) == 10 )
+            {
+                GST_DEBUG_OBJECT(v4l2object->dbg_obj, "mastering display [%f,%f,%f,%f,%f,%f,%f,%f,%f,%f]",
+                                                        hdrMasteringDisplay[0],
+                                                        hdrMasteringDisplay[1],
+                                                        hdrMasteringDisplay[2],
+                                                        hdrMasteringDisplay[3],
+                                                        hdrMasteringDisplay[4],
+                                                        hdrMasteringDisplay[5],
+                                                        hdrMasteringDisplay[6],
+                                                        hdrMasteringDisplay[7],
+                                                        hdrMasteringDisplay[8],
+                                                        hdrMasteringDisplay[9] );
+
+                decParm->hdr.color_parms.present_flag= 1;
+                decParm->hdr.color_parms.primaries[2][0]= (uint32_t)(hdrMasteringDisplay[0]*50000); /* R.x */
+                decParm->hdr.color_parms.primaries[2][1]= (uint32_t)(hdrMasteringDisplay[1]*50000); /* R.y */
+                decParm->hdr.color_parms.primaries[0][0]= (uint32_t)(hdrMasteringDisplay[2]*50000); /* G.x */
+                decParm->hdr.color_parms.primaries[0][1]= (uint32_t)(hdrMasteringDisplay[3]*50000); /* G.y */
+                decParm->hdr.color_parms.primaries[1][0]= (uint32_t)(hdrMasteringDisplay[4]*50000); /* B.x */
+                decParm->hdr.color_parms.primaries[1][1]= (uint32_t)(hdrMasteringDisplay[5]*50000); /* B.y */
+                decParm->hdr.color_parms.white_point[0]= (uint32_t)(hdrMasteringDisplay[6]*50000);
+                decParm->hdr.color_parms.white_point[1]= (uint32_t)(hdrMasteringDisplay[7]*50000);
+                decParm->hdr.color_parms.luminance[0]= (uint32_t)(hdrMasteringDisplay[8]);
+                decParm->hdr.color_parms.luminance[1]= (uint32_t)(hdrMasteringDisplay[9]);
+                GST_DEBUG_OBJECT(v4l2object->dbg_obj, "HDR mastering: primaries %X %X %X %X %X %X",
+                                                        decParm->hdr.color_parms.primaries[2][0],
+                                                        decParm->hdr.color_parms.primaries[2][1],
+                                                        decParm->hdr.color_parms.primaries[0][0],
+                                                        decParm->hdr.color_parms.primaries[0][1],
+                                                        decParm->hdr.color_parms.primaries[1][0],
+                                                        decParm->hdr.color_parms.primaries[1][1] );
+                GST_DEBUG_OBJECT(v4l2object->dbg_obj, "HDR mastering: white point: %X %X",
+                                                        decParm->hdr.color_parms.white_point[0],
+                                                        decParm->hdr.color_parms.white_point[1] );
+                GST_DEBUG_OBJECT(v4l2object->dbg_obj, "HDR mastering: luminance: %X %X",
+                                                        decParm->hdr.color_parms.luminance[0],
+                                                        decParm->hdr.color_parms.luminance[1] );
+            }
+
+            GstStructure *st = gst_caps_get_structure(caps, 0);
+            GstCapsFeatures * features = gst_caps_get_features(caps, 0);
+            if (st && features)
+            {
+                gst_structure_remove_fields(st, "mastering-display-metadata", NULL);
+                gst_caps_features_remove(features, "mastering-display-metadata");
+            }
+            GST_DEBUG_OBJECT(v4l2object->dbg_obj, "caps after remove mastering-display-metadata %" GST_PTR_FORMAT, caps);
         }
     }
 }
@@ -3354,7 +3593,7 @@ gst_aml_v4l2_object_set_format_full(GstAmlV4l2Object *v4l2object, GstCaps *caps,
 
     memset(&streamparm, 0x00, sizeof(struct v4l2_streamparm));
     streamparm.type = v4l2object->type;
-    set_amlogic_vdec_parm(v4l2object, &streamparm);
+    set_amlogic_vdec_parm(v4l2object, &streamparm, caps);
 
     is_mplane = V4L2_TYPE_IS_MULTIPLANAR(v4l2object->type);
 
@@ -3728,9 +3967,10 @@ gst_aml_v4l2_object_set_format_full(GstAmlV4l2Object *v4l2object, GstCaps *caps,
     {
         if (gst_structure_has_field(s, "colorimetry"))
         {
-            if (!gst_aml_v4l2_video_colorimetry_matches(&info.colorimetry,
-                                                        gst_structure_get_string(s, "colorimetry")))
-                goto invalid_colorimetry;
+            if (!gst_aml_v4l2_video_colorimetry_matches(&info.colorimetry, gst_structure_get_string(s, "colorimetry")))
+            {
+                // goto invalid_colorimetry;
+            }
         }
     }
     else
@@ -4514,6 +4754,7 @@ gst_aml_v4l2_object_probe_caps(GstAmlV4l2Object *v4l2object, GstCaps *filter)
             GstCaps *format_caps = gst_caps_new_empty();
 
             gst_caps_append_structure(format_caps, gst_structure_copy(template));
+            GST_INFO_OBJECT(v4l2object->dbg_obj, "format_caps: %" GST_PTR_FORMAT, format_caps);
 
             if (!gst_caps_can_intersect(format_caps, filter))
             {
@@ -4527,6 +4768,7 @@ gst_aml_v4l2_object_probe_caps(GstAmlV4l2Object *v4l2object, GstCaps *filter)
 
         tmp = gst_aml_v4l2_object_probe_caps_for_format(v4l2object,
                                                         format->pixelformat, template);
+        GST_INFO_OBJECT(v4l2object->dbg_obj, "tmp caps: %" GST_PTR_FORMAT, tmp);
 
         if (tmp)
         {
