@@ -215,6 +215,7 @@ struct _GstAmlV4l2Object
     gboolean skip_try_fmt_probes;
     gboolean can_wait_event;
     gboolean need_wait_event;
+    gboolean need_drop_event;
 
     gboolean is_svp;
 

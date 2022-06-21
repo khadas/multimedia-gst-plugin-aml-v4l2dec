@@ -685,6 +685,35 @@ gst_aml_v4l2_video_remove_padding(GstCapsFeatures *features,
 }
 
 static void
+gst_v4l2_drop_event (GstV4l2Object * v4l2object)
+{
+  struct v4l2_event evt;
+  gint ret;
+
+  memset (&evt, 0x00, sizeof (struct v4l2_event));
+  ret = v4l2object->ioctl (v4l2object->video_fd, VIDIOC_DQEVENT, &evt);
+  if (ret < 0)
+  {
+    GST_DEBUG_OBJECT (v4l2object, "dqevent failed");
+    return;
+  }
+
+  switch (evt.type)
+  {
+    case V4L2_EVENT_SOURCE_CHANGE:
+      GST_DEBUG_OBJECT (v4l2object, "Drop GST_V4L2_FLOW_SOURCE_CHANGE");
+      break;
+    case V4L2_EVENT_EOS:
+      GST_DEBUG_OBJECT (v4l2object, "Drop GST_V4L2_FLOW_LAST_BUFFER");
+      break;
+    default:
+      break;
+  }
+
+  return;
+}
+
+static void
 gst_aml_v4l2_video_dec_loop(GstVideoDecoder *decoder)
 {
     GstAmlV4l2VideoDec *self = GST_AML_V4L2_VIDEO_DEC(decoder);
@@ -740,6 +769,13 @@ gst_aml_v4l2_video_dec_loop(GstVideoDecoder *decoder)
               GST_DEBUG_OBJECT(self, "Send SVP Event");
               gst_object_unref (peer);
             }
+        }
+
+        if (self->v4l2capture->need_drop_event)
+        {
+          // drop V4L2_EVENT_SOURCE_CHANGE
+          gst_v4l2_drop_event(self->v4l2capture);
+          self->v4l2capture->need_drop_event = FALSE;
         }
 
         if (!gst_aml_v4l2_object_acquire_format(self->v4l2capture, &info))
@@ -835,6 +871,12 @@ gst_aml_v4l2_video_dec_loop(GstVideoDecoder *decoder)
 
         ret = gst_buffer_pool_acquire_buffer(pool, &buffer, NULL);
         g_object_unref(pool);
+
+        if (ret == GST_V4L2_FLOW_LAST_BUFFER) {
+          GST_LOG_OBJECT(decoder, "Get GST_V4L2_FLOW_LAST_BUFFER");
+          self->v4l2capture->need_drop_event = TRUE;
+          goto beach;
+        }
 
         if (ret == GST_AML_V4L2_FLOW_SOURCE_CHANGE)
         {
@@ -1299,6 +1341,7 @@ gst_aml_v4l2_video_dec_subinstance_init(GTypeInstance *instance, gpointer g_clas
                                                 V4L2_BUF_TYPE_VIDEO_CAPTURE, klass->default_device,
                                                 gst_aml_v4l2_get_input, gst_aml_v4l2_set_input, NULL);
     self->v4l2capture->need_wait_event = TRUE;
+    self->v4l2capture->need_drop_event = FALSE;
 }
 
 static void
