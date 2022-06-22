@@ -2297,10 +2297,17 @@ gst_aml_v4l2_object_add_colorspace(GstAmlV4l2Object *v4l2object, GstStructure *s
         }
     }
 
-    //deal: caps with colorimetry 2,3,14,7
+    GST_DEBUG("deal: caps with colorimetry 2,3,14,7");
     cinfo.range = 2;
     cinfo.matrix = 3;
     cinfo.transfer = 14;
+    cinfo.primaries = 7;
+    gst_aml_v4l2_object_fill_colorimetry_list(&list, &cinfo);
+
+    GST_DEBUG("deal: caps with colorimetry 2,6,13,7");
+    cinfo.range = 2;
+    cinfo.matrix = 6;
+    cinfo.transfer = 13;
     cinfo.primaries = 7;
     gst_aml_v4l2_object_fill_colorimetry_list(&list, &cinfo);
 
