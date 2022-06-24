@@ -467,6 +467,18 @@ gst_aml_v4l2_video_dec_negotiate(GstVideoDecoder *decoder)
 {
     GstAmlV4l2VideoDec *self = GST_AML_V4L2_VIDEO_DEC(decoder);
 
+    if (TRUE == self->v4l2output->is_svp)
+    {
+        GstStructure *s;
+        GstEvent *event;
+
+        s = gst_structure_new_empty ("IS_SVP");
+        event = gst_event_new_custom (GST_EVENT_CUSTOM_DOWNSTREAM_STICKY, s);
+        GST_DEBUG_OBJECT(self, "before Send SVP Event :%p", event);
+        gst_pad_push_event (decoder->srcpad, event);
+        GST_DEBUG_OBJECT(self, "after Send SVP Event :%p", event);
+    }
+
     /* We don't allow renegotiation without carefull disabling the pool */
     if (self->v4l2capture->pool &&
         gst_buffer_pool_is_active(GST_BUFFER_POOL(self->v4l2capture->pool)))
