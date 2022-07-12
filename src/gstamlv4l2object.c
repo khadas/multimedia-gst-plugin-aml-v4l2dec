@@ -1328,6 +1328,8 @@ gst_aml_v4l2_object_v4l2fourcc_to_bare_struct(guint32 fourcc)
     case V4L2_PIX_FMT_MPEG1:
         structure = gst_structure_new("video/mpeg",
                                       "mpegversion", G_TYPE_INT, 1, NULL);
+        gst_structure_set(structure, "systemstream", G_TYPE_BOOLEAN, FALSE, NULL);
+        GST_DEBUG("aml set mpeg1 systemstream to false");
         break;
     case V4L2_PIX_FMT_MPEG2:
         structure = gst_structure_new("video/mpeg",
