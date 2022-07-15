@@ -3340,8 +3340,8 @@ set_amlogic_vdec_parm(GstAmlV4l2Object *v4l2object, struct v4l2_streamparm *stre
     {
         /*set bit12 value to 1,
         *v4l2 output 0 pts of second interlace field frame */
-        decParm->cfg.metadata_config_flag |= (1 << 12);
-        decParm->parms_status = V4L2_CONFIG_PARM_DECODE_CFGINFO;
+        //decParm->cfg.metadata_config_flag |= (1 << 12);
+        //decParm->parms_status = V4L2_CONFIG_PARM_DECODE_CFGINFO;
 
         env = getenv("V4L2_SET_AMLOGIC_DW_MODE");
         if (env)
