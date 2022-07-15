@@ -2320,6 +2320,13 @@ gst_aml_v4l2_object_add_colorspace(GstAmlV4l2Object *v4l2object, GstStructure *s
     cinfo.primaries = 7;
     gst_aml_v4l2_object_fill_colorimetry_list(&list, &cinfo);
 
+    GST_DEBUG("deal: caps with colorimetry 2,6,0,7");
+    cinfo.range = 2;
+    cinfo.matrix = 6;
+    cinfo.transfer = 0;
+    cinfo.primaries = 7;
+    gst_aml_v4l2_object_fill_colorimetry_list(&list, &cinfo);
+
     if (gst_value_list_get_size(&list) > 0)
         gst_structure_take_value(s, "colorimetry", &list);
     else
@@ -3331,6 +3338,11 @@ set_amlogic_vdec_parm(GstAmlV4l2Object *v4l2object, struct v4l2_streamparm *stre
 
     if (v4l2object->type == V4L2_BUF_TYPE_VIDEO_OUTPUT || v4l2object->type == V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE)
     {
+        /*set bit12 value to 1,
+        *v4l2 output 0 pts of second interlace field frame */
+        decParm->cfg.metadata_config_flag |= (1 << 12);
+        decParm->parms_status = V4L2_CONFIG_PARM_DECODE_CFGINFO;
+
         env = getenv("V4L2_SET_AMLOGIC_DW_MODE");
         if (env)
         {
