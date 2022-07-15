@@ -69,6 +69,8 @@ struct _GstAmlV4l2VideoDec
     /* flags */
     gboolean is_secure_path;
 
+    GstClockTime last_out_pts;
+
 #if GST_IMPORT_LGE_PROP
     /* LGE context */
     GstAmlV4l2VideoDecLgeCtxt *lge_ctxt;

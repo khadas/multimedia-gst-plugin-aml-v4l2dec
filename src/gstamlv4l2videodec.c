@@ -882,6 +882,24 @@ gst_aml_v4l2_video_dec_loop(GstVideoDecoder *decoder)
         }
 
         ret = gst_buffer_pool_acquire_buffer(pool, &buffer, NULL);
+        //calculate a new pts for interlace stream
+        if (ret == GST_FLOW_OK &&
+             self->v4l2capture->info.interlace_mode == GST_VIDEO_INTERLACE_MODE_INTERLEAVED)
+        {
+            //if buffer pts is valid, reduce 1/2 duration
+            if (GST_BUFFER_DURATION_IS_VALID(buffer))
+            {
+                GST_BUFFER_DURATION(buffer) = GST_BUFFER_DURATION(buffer)/2;
+            }
+            GST_BUFFER_FLAG_UNSET(buffer, GST_VIDEO_BUFFER_FLAG_INTERLACED);
+            //reset pts
+            if (GST_BUFFER_TIMESTAMP (buffer) == 0LL)
+            {
+                double rate = ((double)self->input_state->info.fps_n/(double)self->input_state->info.fps_d)*2;
+                GST_BUFFER_TIMESTAMP(buffer) = self->last_out_pts + 1000000000LL/rate;
+            }
+        }
+
         g_object_unref(pool);
 
         if (ret == GST_AML_V4L2_FLOW_LAST_BUFFER) {
@@ -916,10 +934,12 @@ gst_aml_v4l2_video_dec_loop(GstVideoDecoder *decoder)
         goto beach;
 
     frame = gst_aml_v4l2_video_dec_get_right_frame(decoder, GST_BUFFER_TIMESTAMP (buffer));
-
     if (frame)
     {
+        self->last_out_pts = GST_BUFFER_TIMESTAMP(buffer);
         frame->output_buffer = buffer;
+        frame->pts = GST_BUFFER_TIMESTAMP(buffer);
+        frame->duration = GST_BUFFER_DURATION(buffer);
         buffer = NULL;
         ret = gst_video_decoder_finish_frame(decoder, frame);
 
