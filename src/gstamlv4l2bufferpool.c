@@ -1156,20 +1156,29 @@ gst_aml_v4l2_buffer_pool_poll(GstAmlV4l2BufferPool *pool, gboolean wait)
 
     /* In RW mode there is no queue, hence no need to wait while the queue is
      * empty */
-    if (pool->obj->mode != GST_V4L2_IO_RW)
+
+    if ((pool->obj->type == V4L2_BUF_TYPE_VIDEO_CAPTURE || pool->obj->type == V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE) &&
+        pool->obj->mode == GST_V4L2_IO_DMABUF_IMPORT)
     {
-        GST_OBJECT_LOCK(pool);
-
-        if (!wait && pool->empty)
+        GST_LOG_OBJECT(pool, "CAPTURE DMA don't quit when empty buf");
+    }
+    else
+    {
+        if (pool->obj->mode != GST_V4L2_IO_RW)
         {
+            GST_OBJECT_LOCK(pool);
+
+            if (!wait && pool->empty)
+            {
+                GST_OBJECT_UNLOCK(pool);
+                goto no_buffers;
+            }
+
+            while (pool->empty)
+                g_cond_wait(&pool->empty_cond, GST_OBJECT_GET_LOCK(pool));
+
             GST_OBJECT_UNLOCK(pool);
-            goto no_buffers;
         }
-
-        while (pool->empty)
-            g_cond_wait(&pool->empty_cond, GST_OBJECT_GET_LOCK(pool));
-
-        GST_OBJECT_UNLOCK(pool);
     }
 
     if (!pool->can_poll_device)
