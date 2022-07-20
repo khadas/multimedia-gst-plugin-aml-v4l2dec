@@ -2334,6 +2334,13 @@ gst_aml_v4l2_object_add_colorspace(GstAmlV4l2Object *v4l2object, GstStructure *s
     cinfo.primaries = 7;
     gst_aml_v4l2_object_fill_colorimetry_list(&list, &cinfo);
 
+    GST_DEBUG("deal: caps with colorimetry 2,3,0,0");
+    cinfo.range = 2;
+    cinfo.matrix = 3;
+    cinfo.transfer = 0;
+    cinfo.primaries = 0;
+    gst_aml_v4l2_object_fill_colorimetry_list(&list, &cinfo);
+
     if (gst_value_list_get_size(&list) > 0)
         gst_structure_take_value(s, "colorimetry", &list);
     else
