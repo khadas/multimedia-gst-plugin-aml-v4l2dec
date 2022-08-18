@@ -637,7 +637,7 @@ gst_aml_v4l2_video_dec_get_right_frame(GstVideoDecoder *decoder, GstClockTime pt
     {
         GstVideoCodecFrame *f = l->data;
 
-        if (GST_CLOCK_TIME_IS_VALID(pts) && (ABS(f->pts - pts)) < 10) {
+        if (GST_CLOCK_TIME_IS_VALID(pts) && (ABSDIFF(f->pts,pts)) < 10) {
             frame = f;
             break;
         } else {

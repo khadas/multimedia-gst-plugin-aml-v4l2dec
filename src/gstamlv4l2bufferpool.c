@@ -1925,7 +1925,9 @@ gst_aml_v4l2_buffer_pool_init(GstAmlV4l2BufferPool *pool)
     pool->poll = gst_poll_new(TRUE);
     pool->can_poll_device = TRUE;
     g_cond_init(&pool->empty_cond);
+    GST_OBJECT_LOCK(pool);
     pool->empty = TRUE;
+    GST_OBJECT_UNLOCK(pool);
     pool->orphaned = FALSE;
 }
 
@@ -2010,7 +2012,7 @@ gst_aml_v4l2_buffer_pool_new(GstAmlV4l2Object *obj, GstCaps *caps)
     gst_buffer_pool_config_set_params(config, caps, obj->info.size, 0, 0);
     /* This will simply set a default config, but will not configure the pool
      * because min and max are not valid */
-    gst_buffer_pool_set_config(GST_BUFFER_POOL_CAST(pool), config);
+    (void)gst_buffer_pool_set_config(GST_BUFFER_POOL_CAST(pool), config);
 
     return GST_BUFFER_POOL(pool);
 

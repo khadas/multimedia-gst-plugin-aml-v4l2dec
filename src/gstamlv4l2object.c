@@ -1798,8 +1798,8 @@ gst_aml_v4l2_object_get_caps_info(GstAmlV4l2Object *v4l2object, GstCaps *caps,
         }
         else if (g_str_equal(mimetype, "video/x-bayer"))
         {
-            const gchar *format = gst_structure_get_string(structure, "format");
-            if (format)
+            const gchar *vformat = gst_structure_get_string(structure, "format");
+            if (vformat)
             {
                 if (!g_ascii_strcasecmp(format, "bggr"))
                     fourcc = V4L2_PIX_FMT_SBGGR8;
@@ -2860,13 +2860,16 @@ default_frame_sizes:
     }
 
     tmp = gst_structure_copy(template);
+#ifdef DELETE_FOR_LGE
     if (fix_num)
     {
         gst_structure_set(tmp, "framerate", GST_TYPE_FRACTION, fix_num,
                           fix_denom, NULL);
     }
-    else if (v4l2object->type == V4L2_BUF_TYPE_VIDEO_CAPTURE ||
-             v4l2object->type == V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE)
+    else
+#endif
+      if (v4l2object->type == V4L2_BUF_TYPE_VIDEO_CAPTURE ||
+          v4l2object->type == V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE)
     {
         /* if norm can't be used, copy the template framerate */
         gst_structure_set(tmp, "framerate", GST_TYPE_FRACTION_RANGE, 0, 1,
@@ -4282,6 +4285,7 @@ invalid_field:
                         wanted_field == V4L2_FIELD_NONE ? "progressive" : "interleaved"));
     return FALSE;
 }
+#ifdef DELETE_FOR_LGE
 invalid_colorimetry:
 {
     gchar *wanted_colorimetry;
@@ -4296,6 +4300,7 @@ invalid_colorimetry:
     g_free(wanted_colorimetry);
     return FALSE;
 }
+#endif
 get_parm_failed:
 {
     /* it's possible that this call is not supported */

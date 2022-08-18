@@ -221,7 +221,7 @@ gst_aml_v4l2_open(GstAmlV4l2Object *v4l2object)
         v4l2object->videodev = g_strdup("/dev/video");
 
     /* check if it is a device */
-    if (stat(v4l2object->videodev, &st) == -1)
+    if ((v4l2object->videodev) && stat(v4l2object->videodev, &st) == -1)
         goto stat_failed;
 
     if (!S_ISCHR(st.st_mode))
@@ -238,6 +238,8 @@ gst_aml_v4l2_open(GstAmlV4l2Object *v4l2object)
     if (v4l2object->fd_open)
         libv4l2_fd = v4l2object->fd_open(v4l2object->video_fd,
                                          V4L2_ENABLE_ENUM_FMT_EMULATION);
+    if (libv4l2_fd != -1)
+        v4l2object->video_fd = libv4l2_fd;
 #endif
 
     /* Note the v4l2_xxx functions are designed so that if they get passed an
@@ -246,8 +248,7 @@ gst_aml_v4l2_open(GstAmlV4l2Object *v4l2object)
        cam format to normal formats conversion). Chances are big we will still
        fail then though, as normally v4l2_fd_open only fails if the device is not
        a v4l2 device. */
-    if (libv4l2_fd != -1)
-        v4l2object->video_fd = libv4l2_fd;
+
 
     /* get capabilities, error will be posted */
     if (!gst_aml_v4l2_get_capabilities(v4l2object))
@@ -314,6 +315,7 @@ not_open:
                       GST_ERROR_SYSTEM);
     goto error;
 }
+#ifdef DELETE_FOR_LGE
 not_capture:
 {
     GST_ELEMENT_ERROR(v4l2object->element, RESOURCE, NOT_FOUND,
@@ -330,6 +332,7 @@ not_output:
                       ("Capabilities: 0x%x", v4l2object->device_caps));
     goto error;
 }
+#endif
 not_m2m:
 {
     GST_ELEMENT_ERROR(v4l2object->element, RESOURCE, NOT_FOUND,
