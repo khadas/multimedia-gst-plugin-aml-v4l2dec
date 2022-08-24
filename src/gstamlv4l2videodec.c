@@ -57,6 +57,10 @@ GST_DEBUG_CATEGORY_STATIC(gst_aml_v4l2_video_dec_debug);
     }
 #endif
 
+#ifndef ABSDIFF
+#define ABSDIFF(a,b) (((a) > (b)) ? ((a) - (b)) : ((b) - (a)))
+#endif
+
 #if GST_IMPORT_LGE_PROP
 typedef struct _GstAmlResourceInfo
 {
