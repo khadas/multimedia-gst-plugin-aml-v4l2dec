@@ -3346,7 +3346,7 @@ gst_aml_v4l2_video_colorimetry_matches(const GstVideoColorimetry *cinfo,
 }
 
 static void
-set_amlogic_vdec_parm(GstAmlV4l2Object *v4l2object, struct v4l2_streamparm *streamparm, GstCaps *caps)
+set_amlogic_vdec_parm(GstAmlV4l2Object *v4l2object, struct v4l2_streamparm *streamparm, GstCaps *caps, guint32 pixFormat)
 {
     struct aml_dec_params *decParm = (struct aml_dec_params *)streamparm->parm.raw_data;
     const char *env;
@@ -3358,8 +3358,20 @@ set_amlogic_vdec_parm(GstAmlV4l2Object *v4l2object, struct v4l2_streamparm *stre
         /*set bit12 value to 1,
         *v4l2 output 0 pts of second interlace field frame */
         //decParm->cfg.metadata_config_flag |= (1 << 12);
-        //decParm->parms_status = V4L2_CONFIG_PARM_DECODE_CFGINFO;
-
+        decParm->parms_status = V4L2_CONFIG_PARM_DECODE_CFGINFO;
+        switch (pixFormat)
+        {
+            default:
+            case V4L2_PIX_FMT_MPEG:
+            case V4L2_PIX_FMT_H264:
+                decParm->cfg.double_write_mode= VDEC_DW_NO_AFBC;
+                break;
+            case V4L2_PIX_FMT_HEVC:
+            case V4L2_PIX_FMT_VP9:
+            case V4L2_PIX_FMT_AV1:
+                decParm->cfg.double_write_mode= VDEC_DW_AFBC_AUTO_1_2;
+                break;
+        }
         env = getenv("V4L2_SET_AMLOGIC_DW_MODE");
         if (env)
         {
@@ -3636,10 +3648,6 @@ gst_aml_v4l2_object_set_format_full(GstAmlV4l2Object *v4l2object, GstCaps *caps,
     if (!try_only)
         GST_AML_V4L2_CHECK_NOT_ACTIVE(v4l2object);
 
-    memset(&streamparm, 0x00, sizeof(struct v4l2_streamparm));
-    streamparm.type = v4l2object->type;
-    set_amlogic_vdec_parm(v4l2object, &streamparm, caps);
-
     is_mplane = V4L2_TYPE_IS_MULTIPLANAR(v4l2object->type);
 
     gst_video_info_init(&info);
@@ -3653,6 +3661,11 @@ gst_aml_v4l2_object_set_format_full(GstAmlV4l2Object *v4l2object, GstCaps *caps,
     height = GST_VIDEO_INFO_HEIGHT(&info);
     fps_n = GST_VIDEO_INFO_FPS_N(&info);
     fps_d = GST_VIDEO_INFO_FPS_D(&info);
+
+    //set amlogic params here,because we need pix format to set dw mode
+    memset(&streamparm, 0x00, sizeof(struct v4l2_streamparm));
+    streamparm.type = v4l2object->type;
+    set_amlogic_vdec_parm(v4l2object, &streamparm, caps, pixelformat);
 
     /* if encoded format (GST_VIDEO_INFO_N_PLANES return 0)
      * or if contiguous is prefered */
