@@ -940,6 +940,11 @@ gst_aml_v4l2_video_dec_loop(GstVideoDecoder *decoder)
     frame = gst_aml_v4l2_video_dec_get_right_frame(decoder, GST_BUFFER_TIMESTAMP (buffer));
     if (frame)
     {
+        if (!GST_CLOCK_TIME_IS_VALID(frame->pts))
+        {
+            double rate = ((double)self->input_state->info.fps_n/(double)self->input_state->info.fps_d);
+            GST_BUFFER_TIMESTAMP(buffer) = self->last_out_pts + 1000000000LL/rate;
+        }
         self->last_out_pts = GST_BUFFER_TIMESTAMP(buffer);
         frame->output_buffer = buffer;
         frame->pts = GST_BUFFER_TIMESTAMP(buffer);
