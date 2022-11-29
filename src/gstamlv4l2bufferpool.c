@@ -1614,6 +1614,14 @@ gst_aml_v4l2_buffer_pool_acquire_buffer(GstBufferPool *bpool, GstBuffer **buffer
         case GST_V4L2_IO_DMABUF:
         case GST_V4L2_IO_MMAP:
         case GST_V4L2_IO_USERPTR:
+        {
+            /* just dequeue a buffer, we basically use the queue of v4l2 as the
+             * storage for our buffers. This function does poll first so we can
+             * interrupt it fine. */
+            ret = gst_aml_v4l2_buffer_pool_dequeue(pool, buffer, TRUE);
+
+            break;
+        }
         case GST_V4L2_IO_DMABUF_IMPORT:
         {
 #ifdef GST_AML_SPEC_FLOW_FOR_VBP
