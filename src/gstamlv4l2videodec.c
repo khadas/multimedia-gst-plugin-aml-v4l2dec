@@ -560,6 +560,7 @@ gst_aml_v4l2_video_dec_finish(GstVideoDecoder *decoder)
          * stopped, _pool_process() will return FLUSHING when that happened */
         while (ret == GST_FLOW_OK)
         {
+            GST_DEBUG_OBJECT(self, "queue empty output buf");
             buffer = gst_buffer_new();
             ret =
                 gst_aml_v4l2_buffer_pool_process(GST_AML_V4L2_BUFFER_POOL(self->v4l2output->pool), &buffer);
@@ -640,8 +641,7 @@ gst_aml_v4l2_video_dec_get_right_frame(GstVideoDecoder *decoder, GstClockTime pt
     for (l = frames; l != NULL; l = l->next)
     {
         GstVideoCodecFrame *f = l->data;
-
-        if (GST_CLOCK_TIME_IS_VALID(pts) && (ABSDIFF(f->pts,pts)) < 10) {
+        if (GST_CLOCK_TIME_IS_VALID(pts) && (ABSDIFF(f->pts,pts)) < 1000) {
             frame = f;
             break;
         } else {
@@ -862,6 +862,12 @@ gst_aml_v4l2_video_dec_loop(GstVideoDecoder *decoder)
         if (!gst_buffer_pool_set_active(GST_BUFFER_POOL(self->v4l2capture->pool),
                                         TRUE))
             goto activate_failed;
+
+        g_mutex_lock(&self->res_chg_lock);
+        GST_LOG_OBJECT(decoder, "signal resolution changed");
+        self->is_res_chg = FALSE;
+        g_cond_signal(&self->res_chg_cond);
+        g_mutex_unlock(&self->res_chg_lock);
     }
 
     GST_LOG_OBJECT(decoder, "Allocate output buffer");
@@ -915,6 +921,11 @@ gst_aml_v4l2_video_dec_loop(GstVideoDecoder *decoder)
         if (ret == GST_AML_V4L2_FLOW_SOURCE_CHANGE)
         {
             GST_LOG_OBJECT(decoder, "Get GST_AML_V4L2_FLOW_SOURCE_CHANGE");
+
+            g_mutex_lock (&self->res_chg_lock);
+            self->is_res_chg = TRUE;
+            g_mutex_unlock (&self->res_chg_lock);
+
             gst_aml_v4l2_object_stop(self->v4l2capture);
             return;
         }
@@ -924,7 +935,7 @@ gst_aml_v4l2_video_dec_loop(GstVideoDecoder *decoder)
             goto beach;
         }
 
-        GST_LOG_OBJECT(decoder, "Process output buffer");
+        GST_LOG_OBJECT(decoder, "Process output buffer (switching flow outstanding num:%d)", self->v4l2capture->outstanding_buf_num);
         ret = gst_aml_v4l2_buffer_pool_process(v4l2_pool, &buffer);
         if (ret == GST_AML_V4L2_FLOW_SOURCE_CHANGE)
         {
@@ -1054,9 +1065,8 @@ gst_aml_v4l2_video_dec_handle_frame(GstVideoDecoder *decoder,
         if (!gst_buffer_pool_is_active(pool))
         {
             GstStructure *config = gst_buffer_pool_get_config(pool);
-            guint min = MAX(self->v4l2output->min_buffers, GST_AML_V4L2_MIN_BUFFERS);
-            guint max = VIDEO_MAX_FRAME;
-
+            // guint min = MAX(self->v4l2output->min_buffers, GST_AML_V4L2_MIN_BUFFERS);
+            // guint max = VIDEO_MAX_FRAME;
             //      gst_buffer_pool_config_set_params (config, self->input_state->caps,
             //          self->v4l2output->info.size, min, max);
             gst_buffer_pool_config_set_params(config, self->input_state->caps, self->v4l2output->info.size, self->v4l2output->min_buffers, self->v4l2output->min_buffers);
@@ -1064,6 +1074,7 @@ gst_aml_v4l2_video_dec_handle_frame(GstVideoDecoder *decoder,
             /* There is no reason to refuse this config */
             if (!gst_buffer_pool_set_config(pool, config))
                 goto activate_failed;
+            GST_DEBUG_OBJECT(self, "setting output pool config to %" GST_PTR_FORMAT, config);
 
             if (!gst_buffer_pool_set_active(pool, TRUE))
                 goto activate_failed;
@@ -1274,6 +1285,15 @@ gst_aml_v4l2_video_dec_sink_event(GstVideoDecoder *decoder, GstEvent *event)
     {
     case GST_EVENT_FLUSH_START:
         GST_DEBUG_OBJECT(self, "flush start");
+
+        g_mutex_lock (&self->res_chg_lock);
+        while (self->is_res_chg)
+        {
+            GST_LOG_OBJECT(decoder, "wait resolution change finish");
+            g_cond_wait(&self->res_chg_cond, &self->res_chg_lock);
+        }
+        g_mutex_unlock (&self->res_chg_lock);
+
         gst_aml_v4l2_object_unlock(self->v4l2output);
         gst_aml_v4l2_object_unlock(self->v4l2capture);
         break;
@@ -1334,6 +1354,9 @@ gst_aml_v4l2_video_dec_finalize(GObject *object)
     gst_aml_v4l2_object_destroy(self->v4l2capture);
     gst_aml_v4l2_object_destroy(self->v4l2output);
 
+    g_mutex_clear(&self->res_chg_lock);
+    g_cond_clear(&self->res_chg_cond);
+
 #if GST_IMPORT_LGE_PROP
     if (self->lge_ctxt)
     {
@@ -1354,6 +1377,9 @@ gst_aml_v4l2_video_dec_init(GstAmlV4l2VideoDec *self)
 {
     /* V4L2 object are created in subinstance_init */
     self->is_secure_path = FALSE;
+    self->is_res_chg = FALSE;
+    g_mutex_init(&self->res_chg_lock);
+    g_cond_init(&self->res_chg_cond);
 #if GST_IMPORT_LGE_PROP
     self->lge_ctxt = malloc(sizeof(GstAmlV4l2VideoDecLgeCtxt));
     memset(self->lge_ctxt, 0, sizeof(GstAmlV4l2VideoDecLgeCtxt));

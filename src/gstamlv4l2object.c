@@ -50,8 +50,7 @@ GST_DEBUG_CATEGORY_EXTERN(aml_v4l2_debug);
 #define DEFAULT_PROP_TV_NORM 0
 #define DEFAULT_PROP_IO_MODE GST_V4L2_IO_AUTO
 
-#define ENCODED_BUFFER_SIZE (2 * 1024 * 1024)
-#define DEFAULT_EXTRA_CAPTURE_BUF_SIZE 3
+#define ENCODED_BUFFER_SIZE (3 * 1024 * 1024)
 
 #define V4L2_CONFIG_PARM_DECODE_CFGINFO (1 << 0)
 #define V4L2_CONFIG_PARM_DECODE_PSINFO  (1 << 1)
@@ -498,6 +497,10 @@ gst_aml_v4l2_object_new(GstElement *element,
 
     v4l2object->dumpframefile = NULL;
 
+    /* jxsdbg resolution switching */
+    v4l2object->old_other_pool = NULL;
+    v4l2object->old_old_other_pool = NULL;
+    v4l2object->outstanding_buf_num = 0;
     return v4l2object;
 }
 
@@ -529,6 +532,19 @@ void gst_aml_v4l2_object_destroy(GstAmlV4l2Object *v4l2object)
     gst_poll_free(v4l2object->poll);
 
     g_free(v4l2object->dumpframefile);
+
+    /* jxsdbg resolution switching */
+    if (v4l2object->old_other_pool)
+    {
+        gst_object_unref(v4l2object->old_other_pool);
+        v4l2object->old_other_pool = NULL;
+    }
+    if (v4l2object->old_old_other_pool)
+    {
+        gst_object_unref(v4l2object->old_old_other_pool);
+        v4l2object->old_old_other_pool = NULL;
+    }
+    v4l2object->outstanding_buf_num = 0;
 
     g_free(v4l2object);
 }
@@ -2555,7 +2571,7 @@ return_data:
     {
         gst_aml_v4l2_object_add_interlace_mode(v4l2object, s, width, height,
                                                pixelformat);
-        gst_aml_v4l2_object_add_colorspace(v4l2object, s, width, height, pixelformat);
+        // gst_aml_v4l2_object_add_colorspace(v4l2object, s, width, height, pixelformat);
     }
 
     if (G_IS_VALUE(&rates))
@@ -2868,8 +2884,8 @@ default_frame_sizes:
     }
     else
 #endif
-      if (v4l2object->type == V4L2_BUF_TYPE_VIDEO_CAPTURE ||
-          v4l2object->type == V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE)
+    if (v4l2object->type == V4L2_BUF_TYPE_VIDEO_CAPTURE ||
+        v4l2object->type == V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE)
     {
         /* if norm can't be used, copy the template framerate */
         gst_structure_set(tmp, "framerate", GST_TYPE_FRACTION_RANGE, 0, 1,
@@ -3389,6 +3405,12 @@ set_amlogic_vdec_parm(GstAmlV4l2Object *v4l2object, struct v4l2_streamparm *stre
                 break;
             }
         }
+        GST_DEBUG_OBJECT(v4l2object->dbg_obj, "cfg dw mode to %d", decParm->cfg.double_write_mode);
+
+        // decParm->cfg.double_write_mode = 0x03;
+        decParm->parms_status |= V4L2_CONFIG_PARM_DECODE_CFGINFO;
+
+        decParm->cfg.ref_buf_margin = GST_AML_V4L2_DEFAULT_CAP_BUF_MARGIN;
 
         if (v4l2object->ioctl(v4l2object->video_fd, VIDIOC_S_PARM, streamparm) < 0)
         {
@@ -3396,7 +3418,7 @@ set_amlogic_vdec_parm(GstAmlV4l2Object *v4l2object, struct v4l2_streamparm *stre
         }
         else
         {
-            GST_DEBUG_OBJECT(v4l2object->dbg_obj, "Set dwMode to %d", decParm->cfg.double_write_mode);
+            GST_DEBUG_OBJECT(v4l2object->dbg_obj, "Set dwMode to %d, margin to %d", decParm->cfg.double_write_mode, decParm->cfg.ref_buf_margin);
         }
 
         GstStructure *structure= gst_caps_get_structure(caps, 0);
@@ -3615,6 +3637,30 @@ set_amlogic_vdec_parm(GstAmlV4l2Object *v4l2object, struct v4l2_streamparm *stre
             GST_DEBUG_OBJECT(v4l2object->dbg_obj, "caps after remove mastering-display-metadata %" GST_PTR_FORMAT, caps);
         }
     }
+}
+
+static gint gst_aml_v4l2_object_get_dw_mode(GstAmlV4l2Object *v4l2object)
+{
+    struct v4l2_streamparm streamparm;
+    struct aml_dec_params *decParm = (struct aml_dec_params *)(&streamparm.parm.raw_data);
+    memset(&streamparm, 0x00, sizeof(struct v4l2_streamparm));
+
+    streamparm.type = V4L2_BUF_TYPE_VIDEO_OUTPUT;
+    if (v4l2object->ioctl(v4l2object->video_fd, VIDIOC_G_PARM, &streamparm) >= 0)
+    {
+        GST_DEBUG_OBJECT(v4l2object, "get dw mode:%d in type V4L2_BUF_TYPE_VIDEO_OUTPUT", decParm->cfg.double_write_mode);
+        return decParm->cfg.double_write_mode;
+    }
+
+    streamparm.type = V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE;
+    if (v4l2object->ioctl(v4l2object->video_fd, VIDIOC_G_PARM, &streamparm) >= 0)
+    {
+        GST_DEBUG_OBJECT(v4l2object, "get dw mode:%d in type V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE", decParm->cfg.double_write_mode);
+        return decParm->cfg.double_write_mode;
+    }
+
+    GST_ERROR_OBJECT(v4l2object, "can't get dw mode in type V4L2_BUF_TYPE_VIDEO_OUTPUT or V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE ret -1");
+    return -1;
 }
 
 static gboolean
@@ -4467,6 +4513,7 @@ gst_aml_v4l2_object_acquire_format(GstAmlV4l2Object *v4l2object, GstVideoInfo *i
     GstVideoFormat format;
     guint width, height;
     GstVideoAlignment align;
+    gint dw_mode;
 
     gst_video_info_init(info);
     gst_video_alignment_reset(&align);
@@ -4510,7 +4557,9 @@ gst_aml_v4l2_object_acquire_format(GstAmlV4l2Object *v4l2object, GstVideoInfo *i
         if (v4l2object->ioctl(v4l2object->video_fd, VIDIOC_G_CROP, &crop) >= 0)
             r = &crop.c;
     }
-    if (r)
+
+    dw_mode = gst_aml_v4l2_object_get_dw_mode(v4l2object);
+    if (r && (dw_mode >= 0 && dw_mode != 16))
     {
         align.padding_left = r->left;
         align.padding_top = r->top;
@@ -4519,6 +4568,7 @@ gst_aml_v4l2_object_acquire_format(GstAmlV4l2Object *v4l2object, GstVideoInfo *i
         width = r->width;
         height = r->height;
     }
+    GST_DEBUG_OBJECT(v4l2object->dbg_obj, "final w:%d, h:%d", width, height);
 
     gst_video_info_set_format(info, format, width, height);
 
@@ -4732,12 +4782,29 @@ gst_aml_v4l2_object_unlock_stop(GstAmlV4l2Object *v4l2object)
 gboolean
 gst_aml_v4l2_object_stop(GstAmlV4l2Object *v4l2object)
 {
+    GstAmlV4l2BufferPool *bpool = GST_AML_V4L2_BUFFER_POOL(v4l2object->pool);
+
     GST_DEBUG_OBJECT(v4l2object->dbg_obj, "stopping");
 
     if (!GST_AML_V4L2_IS_OPEN(v4l2object))
         goto done;
     if (!GST_AML_V4L2_IS_ACTIVE(v4l2object))
         goto done;
+
+    if (bpool && bpool->other_pool) /* jxsdbg for resolution switch */
+    {
+        if (v4l2object->old_other_pool)
+        {
+            /* this case indicate 1st switch did not wait all old pool buf recycle and 2nd switch is coming.
+               so save 1st old pool  */
+            GST_DEBUG_OBJECT(v4l2object->dbg_obj, "switching occurs during last switching buf recycle flow");
+            v4l2object->old_old_other_pool = v4l2object->old_other_pool;
+        }
+
+        GST_DEBUG_OBJECT(v4l2object->dbg_obj, "switching flow, ref old drmbufferpool");
+        v4l2object->old_other_pool = bpool->other_pool;
+        gst_object_ref(v4l2object->old_other_pool);
+    }
 
     if (v4l2object->pool)
     {
@@ -4763,6 +4830,7 @@ gst_aml_v4l2_object_probe_caps(GstAmlV4l2Object *v4l2object, GstCaps *filter)
     GSList *walk;
     GSList *formats;
 
+    GST_INFO_OBJECT(v4l2object->dbg_obj, "filter caps: %" GST_PTR_FORMAT, filter);
     formats = gst_aml_v4l2_object_get_format_list(v4l2object);
 
     ret = gst_caps_new_empty();
@@ -4963,8 +5031,7 @@ gst_aml_v4l2_object_decide_allocation(GstAmlV4l2Object *obj, GstQuery *query)
          * our own, so it can serve itself */
         if (pool == NULL)
             goto no_downstream_pool;
-        gst_aml_v4l2_buffer_pool_set_other_pool(GST_AML_V4L2_BUFFER_POOL(obj->pool),
-                                                pool);
+        gst_aml_v4l2_buffer_pool_set_other_pool(GST_AML_V4L2_BUFFER_POOL(obj->pool), pool);
         other_pool = pool;
         gst_object_unref(pool);
         pool = gst_object_ref(obj->pool);
@@ -5035,19 +5102,8 @@ gst_aml_v4l2_object_decide_allocation(GstAmlV4l2Object *obj, GstQuery *query)
     }
     else
     {
-        /* In this case we'll have to configure two buffer pool. For our buffer
-         * pool, we'll need what the driver one, and one more, so we can dequeu */
-        own_min = obj->min_buffers + 1;
-        own_min = MAX(own_min, GST_AML_V4L2_MIN_BUFFERS);
-
-        /* for the downstream pool, we keep what downstream wants, though ensure
-         * at least a minimum if downstream didn't suggest anything (we are
-         * expecting the base class to create a default one for the context) */
-        min = MAX(min, GST_AML_V4L2_MIN_BUFFERS);
-
-        /* To import we need the other pool to hold at least own_min */
-        if (obj->pool == pool)
-            min += own_min;
+        min = obj->min_buffers;
+        max = min;
     }
 
     /* Request a bigger max, if one was suggested but it's too small */
@@ -5065,7 +5121,7 @@ gst_aml_v4l2_object_decide_allocation(GstAmlV4l2Object *obj, GstQuery *query)
     }
 
     gst_buffer_pool_config_set_allocator(config, allocator, &params);
-    gst_buffer_pool_config_set_params(config, caps, size, own_min + DEFAULT_EXTRA_CAPTURE_BUF_SIZE, own_min + DEFAULT_EXTRA_CAPTURE_BUF_SIZE);
+    gst_buffer_pool_config_set_params(config, caps, size, min, max);
 
     GST_DEBUG_OBJECT(obj->dbg_obj, "setting own pool config to %" GST_PTR_FORMAT, config);
 
@@ -5088,6 +5144,19 @@ gst_aml_v4l2_object_decide_allocation(GstAmlV4l2Object *obj, GstQuery *query)
     if (other_pool)
     {
         GstAmlV4l2VideoDec *self = (GstAmlV4l2VideoDec *)obj->element;
+        guint other_min = min;
+        guint other_max = max;
+
+        if (obj->old_other_pool || obj->old_old_other_pool) //jxsdbg for switching
+        {
+            obj->outstanding_buf_num = gst_aml_v4l2_object_get_outstanding_capture_buf_num(obj);
+            other_min = min - obj->outstanding_buf_num;
+            other_max = max - obj->outstanding_buf_num;
+            GST_DEBUG_OBJECT(obj, "oop:%p, ooop:%p, outstanding buf num:%d, set min, max to %d,%d",
+                             obj->old_other_pool, obj->old_old_other_pool,
+                             obj->outstanding_buf_num, other_min, other_max);
+        }
+
         if (self->is_secure_path)
         {
             params.flags |= GST_MEMORY_FLAG_LAST << 1; // in drmallocator GST_MEMORY_FLAG_LAST << 1 represent GST_MEMORY_FLAG_SECURE
@@ -5095,7 +5164,7 @@ gst_aml_v4l2_object_decide_allocation(GstAmlV4l2Object *obj, GstQuery *query)
         }
         config = gst_buffer_pool_get_config(other_pool);
         gst_buffer_pool_config_set_allocator(config, allocator, &params);
-        gst_buffer_pool_config_set_params(config, caps, size, own_min + DEFAULT_EXTRA_CAPTURE_BUF_SIZE, own_min + DEFAULT_EXTRA_CAPTURE_BUF_SIZE);
+        gst_buffer_pool_config_set_params (config, caps, size, other_min, other_max);
         gst_buffer_pool_config_set_video_alignment(config, &obj->align);
 
         GST_DEBUG_OBJECT(obj->dbg_obj, "setting other pool config to %" GST_PTR_FORMAT, config);
@@ -5489,4 +5558,41 @@ gboolean gst_aml_v4l2_set_drm_mode(GstAmlV4l2Object *v4l2object)
         GST_DEBUG_OBJECT(v4l2object, "req mode is not GST_V4L2_IO_DMABUF_IMPORT, DRM mode does not need to be configured");
         return TRUE;
     }
+}
+
+gint gst_aml_v4l2_object_get_outstanding_capture_buf_num(GstAmlV4l2Object *obj)
+{
+    gint ret = 0;
+    gint count = 0;
+
+    if (obj->old_other_pool)
+    {
+        count = gst_buffer_pool_get_outstanding_num(obj->old_other_pool);
+        if (count)
+        {
+            ret += count;
+        }
+        else
+        {
+            gst_object_unref(obj->old_other_pool);
+            obj->old_other_pool = NULL;
+        }
+    }
+
+    count = 0;
+    if (obj->old_old_other_pool)
+    {
+        count = gst_buffer_pool_get_outstanding_num(obj->old_old_other_pool);
+        if (count)
+        {
+            ret += count;
+        }
+        else
+        {
+            gst_object_unref(obj->old_old_other_pool);
+            obj->old_old_other_pool = NULL;
+        }
+    }
+
+    return ret;
 }

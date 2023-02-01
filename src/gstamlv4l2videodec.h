@@ -68,6 +68,11 @@ struct _GstAmlV4l2VideoDec
 
     /* flags */
     gboolean is_secure_path;
+    gboolean is_res_chg;
+
+    /* resolution change lock */
+    GMutex res_chg_lock;
+    GCond res_chg_cond;
 
     GstClockTime last_out_pts;
 

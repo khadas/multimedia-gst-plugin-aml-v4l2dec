@@ -143,7 +143,7 @@ gst_aml_v4l2_buffer_pool_copy_buffer(GstAmlV4l2BufferPool *pool, GstBuffer *dest
     {
         GstMapInfo map;
 
-        GST_DEBUG_OBJECT(pool, "copy raw bytes");
+        GST_DEBUG_OBJECT(pool, "copy raw bytes size:%d", gst_buffer_get_size(src));
 
         if (!gst_buffer_map(src, &map, GST_MAP_READ))
             goto invalid_buffer;
@@ -977,7 +977,12 @@ gst_aml_v4l2_buffer_pool_start(GstBufferPool *bpool)
     if (!V4L2_TYPE_IS_OUTPUT(obj->type))
     {
         if (g_atomic_int_get(&pool->num_queued) < min_buffers)
-            goto queue_failed;
+        {
+            if (obj->old_other_pool || obj->old_old_other_pool)
+                GST_DEBUG_OBJECT(pool, "resolution switching flow, need to wait other pool recycle");
+            else
+                goto queue_failed;
+        }
 
         pool->group_released_handler =
             g_signal_connect_swapped(pool->vallocator, "group-released",
@@ -1098,7 +1103,10 @@ gst_aml_v4l2_buffer_pool_orphan(GstBufferPool **bpool)
      */
     ret = gst_aml_v4l2_buffer_pool_stop(*bpool);
     if (!ret)
+    {
+        GST_DEBUG_OBJECT(pool, "stop poll fail, try to orphaning allocator");
         ret = gst_aml_v4l2_allocator_orphan(pool->vallocator);
+    }
 
     if (!ret)
         goto orphan_failed;
@@ -1825,11 +1833,40 @@ gst_aml_v4l2_buffer_pool_release_buffer_aml_patch(GstBufferPool *bpool)
     GstAmlV4l2BufferPool *pool = GST_AML_V4L2_BUFFER_POOL(bpool);
     GstBufferPoolClass *pclass = GST_BUFFER_POOL_CLASS(parent_class);
     GstAmlV4l2Object *obj = pool->obj;
+    GstAmlV4l2VideoDec *dec = (GstAmlV4l2VideoDec *)obj->element;
 
     if (obj->mode == GST_V4L2_IO_DMABUF_IMPORT && pool->other_pool)
     {
         GstBuffer *src = NULL;
         GstBufferPoolAcquireParams params;
+
+        if (obj->old_other_pool || obj->old_old_other_pool)
+        {
+            guint outstanding_buf_num = 0;
+
+            outstanding_buf_num = gst_aml_v4l2_object_get_outstanding_capture_buf_num(obj);
+            GST_DEBUG_OBJECT(pool, "amlmodbuf oop outstanding buf num %d", outstanding_buf_num);
+            if (outstanding_buf_num != obj->outstanding_buf_num)
+            {
+                guint update = 0;
+
+                if (outstanding_buf_num > obj->outstanding_buf_num)
+                {
+                    GST_ERROR_OBJECT(pool, "amlmodbuf old other pool recycle buffer error, outstanding from %d to %d", obj->outstanding_buf_num, outstanding_buf_num);
+                    return FALSE;
+                }
+                GST_DEBUG_OBJECT(pool, "amlmodbuf oop outstanding buf num from %d reduce to %d", obj->outstanding_buf_num, outstanding_buf_num);
+
+                update = obj->outstanding_buf_num - outstanding_buf_num;
+                if (!gst_buffer_pool_increase_max_num(pool->other_pool, update))
+                {
+                    GST_ERROR_OBJECT(pool, "amlmodbuf update other pool max buffer num error");
+                    return FALSE;
+                }
+
+                obj->outstanding_buf_num = outstanding_buf_num;
+            }
+        }
 
         memset(&params, 0, sizeof(GstBufferPoolAcquireParams));
         params.flags = GST_BUFFER_POOL_ACQUIRE_FLAG_DONTWAIT;

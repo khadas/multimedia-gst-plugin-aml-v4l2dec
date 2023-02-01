@@ -32,6 +32,7 @@
 #include <sys/types.h>
 #include <sys/mman.h>
 #include <unistd.h>
+#include <stdio.h>
 
 #define GST_AML_V4L2_MEMORY_TYPE "V4l2Memory"
 
@@ -56,6 +57,44 @@ enum
 };
 
 static guint gst_aml_v4l2_allocator_signals[LAST_SIGNAL] = {0};
+
+static void gst_aml_v4l2_allocator_dump_es_buf(GstAmlV4l2Allocator *allocator, GstAmlV4l2MemoryGroup *group)
+{
+    const gchar *dump_dir = NULL;
+    gchar *full_file_name = NULL;
+    FILE *out = NULL;
+
+    dump_dir = g_getenv("GST_AML_DUMP_AML_V4L2_ES_BUF_DIR");
+    if (G_LIKELY(dump_dir == NULL))
+        return;
+
+    if (allocator->obj->type != V4L2_BUF_TYPE_VIDEO_OUTPUT && allocator->obj->type != V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE)
+        return;
+
+    GST_DEBUG_OBJECT(allocator, "assert ok start dump");
+    full_file_name = g_strdup_printf("%s" G_DIR_SEPARATOR_S "amlv4l2_es.bin", dump_dir);
+    if ((out = fopen(full_file_name, "ab")))
+    {
+        GST_DEBUG_OBJECT(allocator, "open dir ok");
+        GstMapInfo map;
+        memset(&map, 0, sizeof(GstMapInfo));
+        for (int i = 0; i < group->n_mem; i++)
+        {
+            if (gst_memory_map(group->mem[i], &map, GST_MAP_READ))
+            {
+                GST_DEBUG_OBJECT(allocator, "es ts:%llu dump_size:%d,v4l2_buf_byteused:%d,%d",
+                                 group->buffer.timestamp.tv_sec * 1000000000ULL + group->buffer.timestamp.tv_usec * 1000,
+                                 map.size,
+                                 group->buffer.bytesused, group->planes[0].bytesused);
+                fwrite(map.data, map.size, 1, out);
+                gst_memory_unmap(group->mem[i], &map);
+            }
+        }
+        fclose(out);
+        out = NULL;
+    }
+    g_free(full_file_name);
+}
 
 static void gst_aml_v4l2_allocator_release(GstAmlV4l2Allocator *allocator,
                                            GstAmlV4l2Memory *mem);
@@ -521,7 +560,10 @@ gst_aml_v4l2_allocator_probe(GstAmlV4l2Allocator *allocator, guint32 memory,
     }
 
     if (breq.capabilities & V4L2_BUF_CAP_SUPPORTS_ORPHANED_BUFS)
+    {
         flags |= GST_V4L2_ALLOCATOR_FLAG_SUPPORTS_ORPHANED_BUFS;
+        GST_ERROR_OBJECT(allocator, "v4l2 support GST_V4L2_ALLOCATOR_FLAG_SUPPORTS_ORPHANED_BUFS");
+    }
 
     return flags;
 }
@@ -1328,6 +1370,8 @@ gst_aml_v4l2_allocator_qbuf(GstAmlV4l2Allocator *allocator,
         currFramePTS= group->buffer.timestamp.tv_sec * 1000000LL + group->buffer.timestamp.tv_usec;
     }
     GST_LOG_OBJECT(allocator, "q buffer, timestamp:%lld",currFramePTS);
+
+    gst_aml_v4l2_allocator_dump_es_buf(allocator, group);
 
     if (obj->ioctl(obj->video_fd, VIDIOC_QBUF, &group->buffer) < 0)
     {

@@ -42,6 +42,9 @@ typedef struct _GstAmlV4l2ObjectClassHelper GstAmlV4l2ObjectClassHelper;
 
 /* size of v4l2 buffer pool in streaming case */
 #define GST_AML_V4L2_MIN_BUFFERS 2
+#define GST_AML_V4L2_MAX_AV1_CAP_BUFS 16
+#define GST_AML_V4L2_MAX_VP9_CAP_BUFS 20
+#define GST_AML_V4L2_DEFAULT_CAP_BUF_MARGIN 4
 
 /* max frame width/height */
 #define GST_AML_V4L2_MAX_SIZE (1 << 15) /* 2^15 == 32768 */
@@ -165,6 +168,11 @@ struct _GstAmlV4l2Object
 
     /* optional pool */
     GstBufferPool *pool;
+
+    /* jxsdbg for resolution switch */
+    GstBufferPool *old_other_pool;
+    GstBufferPool *old_old_other_pool;
+    gint outstanding_buf_num;
 
     /* the video device's capabilities */
     struct v4l2_capability vcap;
@@ -340,6 +348,7 @@ gboolean gst_aml_v4l2_get_attribute(GstAmlV4l2Object *v4l2object, int attribute,
 gboolean gst_aml_v4l2_set_attribute(GstAmlV4l2Object *v4l2object, int attribute, const int value);
 gboolean gst_aml_v4l2_set_controls(GstAmlV4l2Object *v4l2object, GstStructure *controls);
 gboolean gst_aml_v4l2_set_drm_mode(GstAmlV4l2Object *v4l2object);
+gint gst_aml_v4l2_object_get_outstanding_capture_buf_num(GstAmlV4l2Object *v4l2object);
 
 G_END_DECLS
 
