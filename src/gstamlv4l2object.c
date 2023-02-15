@@ -28,6 +28,7 @@
 #include <sys/mman.h>
 #include <sys/ioctl.h>
 #include <stdio.h>
+#include <sys/utsname.h>
 
 #ifdef HAVE_GUDEV
 #include <gudev/gudev.h>
@@ -56,6 +57,10 @@ GST_DEBUG_CATEGORY_EXTERN(aml_v4l2_debug);
 #define V4L2_CONFIG_PARM_DECODE_PSINFO  (1 << 1)
 #define V4L2_CONFIG_PARM_DECODE_HDRINFO (1 << 2)
 #define V4L2_CONFIG_PARM_DECODE_CNTINFO (1 << 3)
+
+#define V4L2_CID_USER_AMLOGIC_BASE (V4L2_CID_USER_BASE + 0x1100)
+#define AML_V4L2_SET_DRMMODE (V4L2_CID_USER_AMLOGIC_BASE + 0)
+#define AML_V4L2_DEC_PARMS_CONFIG (V4L2_CID_USER_AMLOGIC_BASE + 7)
 
 enum
 {
@@ -3366,6 +3371,11 @@ set_amlogic_vdec_parm(GstAmlV4l2Object *v4l2object, struct v4l2_streamparm *stre
 {
     struct aml_dec_params *decParm = (struct aml_dec_params *)streamparm->parm.raw_data;
     const char *env;
+    struct v4l2_ext_control control;
+    struct v4l2_ext_controls ctrls;
+    gboolean use_ext_config = FALSE;
+    int major = 0,minor = 0;
+    struct utsname info;
 
     decParm->cfg.metadata_config_flag = 1 << 13;
 
@@ -3412,13 +3422,42 @@ set_amlogic_vdec_parm(GstAmlV4l2Object *v4l2object, struct v4l2_streamparm *stre
 
         decParm->cfg.ref_buf_margin = GST_AML_V4L2_DEFAULT_CAP_BUF_MARGIN;
 
-        if (v4l2object->ioctl(v4l2object->video_fd, VIDIOC_S_PARM, streamparm) < 0)
+        if (uname(&info) || sscanf(info.release, "%d.%d", &major, &minor) <= 0)
         {
-            GST_DEBUG_OBJECT(v4l2object->dbg_obj, "set vdec parm fail");
+            GST_DEBUG("get linux version failed");
         }
+        GST_DEBUG("linux  major version %d %d", major,minor);
+
+        use_ext_config = ((major == 5 && minor >= 15) || major >= 6) ? TRUE: FALSE;
+
+        if (use_ext_config)
+        {
+            memset(&ctrls, 0, sizeof(ctrls));
+            memset(&control, 0, sizeof(control));
+            control.id = AML_V4L2_DEC_PARMS_CONFIG;
+            control.ptr = decParm;
+            control.size = sizeof(struct aml_dec_params);
+            ctrls.count = 1;
+            ctrls.controls = &control;
+            if (v4l2object->ioctl( v4l2object->video_fd, VIDIOC_S_EXT_CTRLS, &ctrls ) <0)
+            {
+                GST_DEBUG_OBJECT(v4l2object->dbg_obj, "set vdec parm fail");
+            }
+            else
+            {
+                GST_DEBUG_OBJECT(v4l2object->dbg_obj, "set dwMode to %d, margin to %d", decParm->cfg.double_write_mode, decParm->cfg.ref_buf_margin);
+            }
+         }
         else
         {
-            GST_DEBUG_OBJECT(v4l2object->dbg_obj, "Set dwMode to %d, margin to %d", decParm->cfg.double_write_mode, decParm->cfg.ref_buf_margin);
+            if (v4l2object->ioctl(v4l2object->video_fd, VIDIOC_S_PARM, streamparm) < 0)
+            {
+                GST_DEBUG_OBJECT(v4l2object->dbg_obj, "set vdec parm fail");
+            }
+            else
+            {
+                GST_DEBUG_OBJECT(v4l2object->dbg_obj, "Set dwMode to %d, margin to %d", decParm->cfg.double_write_mode, decParm->cfg.ref_buf_margin);
+            }
         }
 
         GstStructure *structure= gst_caps_get_structure(caps, 0);
@@ -4156,9 +4195,10 @@ gst_aml_v4l2_object_set_format_full(GstAmlV4l2Object *v4l2object, GstCaps *caps,
         streamparm.parm.capture.timeperframe.numerator = fps_d;
         streamparm.parm.capture.timeperframe.denominator = fps_n;
 
-        /* some cheap USB cam's won't accept any change */
-        if (v4l2object->ioctl(fd, VIDIOC_S_PARM, &streamparm) < 0)
-            goto set_parm_failed;
+        /* Amlogic sets parameters to the decoder and only supports delivery of private structures */
+        //some cheap USB cam's won't accept any change */
+        //if (v4l2object->ioctl(fd, VIDIOC_S_PARM, &streamparm) < 0)
+        //goto set_parm_failed;
 
         if (streamparm.parm.capture.timeperframe.numerator > 0 &&
             streamparm.parm.capture.timeperframe.denominator > 0)
@@ -4204,8 +4244,9 @@ gst_aml_v4l2_object_set_format_full(GstAmlV4l2Object *v4l2object, GstCaps *caps,
         streamparm.parm.output.timeperframe.numerator = fps_d;
         streamparm.parm.output.timeperframe.denominator = fps_n;
 
-        if (v4l2object->ioctl(fd, VIDIOC_S_PARM, &streamparm) < 0)
-            goto set_parm_failed;
+        /*Amlogic sets parameters to the decoder and only supports delivery of private structures*/
+        //if (v4l2object->ioctl(fd, VIDIOC_S_PARM, &streamparm) < 0)
+        //goto set_parm_failed;
 
         if (streamparm.parm.output.timeperframe.numerator > 0 &&
             streamparm.parm.output.timeperframe.denominator > 0)
@@ -5519,8 +5560,8 @@ gboolean gst_aml_v4l2_set_drm_mode(GstAmlV4l2Object *v4l2object)
         GstAmlV4l2VideoDec *self = (GstAmlV4l2VideoDec *)v4l2object->element;
         self->is_secure_path = TRUE;
 
-#define V4L2_CID_USER_AMLOGIC_BASE (V4L2_CID_USER_BASE + 0x1100)
-#define AML_V4L2_SET_DRMMODE (V4L2_CID_USER_AMLOGIC_BASE + 0)
+//#define V4L2_CID_USER_AMLOGIC_BASE (V4L2_CID_USER_BASE + 0x1100)
+//#define AML_V4L2_SET_DRMMODE (V4L2_CID_USER_AMLOGIC_BASE + 0)
         memset(&queryctrl, 0, sizeof(queryctrl));
         queryctrl.id = AML_V4L2_SET_DRMMODE;
 
