@@ -3395,7 +3395,7 @@ set_amlogic_vdec_parm(GstAmlV4l2Object *v4l2object, struct v4l2_streamparm *stre
             case V4L2_PIX_FMT_HEVC:
             case V4L2_PIX_FMT_VP9:
             case V4L2_PIX_FMT_AV1:
-                decParm->cfg.double_write_mode= VDEC_DW_AFBC_AUTO_1_2;
+                decParm->cfg.double_write_mode= VDEC_DW_AFBC_AUTO_1_4;
                 break;
         }
         env = getenv("V4L2_SET_AMLOGIC_DW_MODE");
@@ -3410,6 +3410,8 @@ set_amlogic_vdec_parm(GstAmlV4l2Object *v4l2object, struct v4l2_streamparm *stre
             case 3:
             case 4:
             case 16:
+            case 256:
+            case 512:
                 decParm->cfg.double_write_mode = dwMode;
                 decParm->parms_status |= V4L2_CONFIG_PARM_DECODE_CFGINFO;
                 break;
@@ -4581,7 +4583,6 @@ gst_aml_v4l2_object_acquire_format(GstAmlV4l2Object *v4l2object, GstVideoInfo *i
 
     width = fmt.fmt.pix.width;
     height = fmt.fmt.pix.height;
-
     /* Use the default compose rectangle */
     memset(&sel, 0, sizeof(struct v4l2_selection));
     sel.type = v4l2object->type;
