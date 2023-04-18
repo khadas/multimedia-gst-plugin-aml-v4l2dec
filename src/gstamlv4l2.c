@@ -40,6 +40,7 @@
 /* used in gstamlv4l2object.c and aml_v4l2_calls.c */
 GST_DEBUG_CATEGORY(aml_v4l2_debug);
 #define GST_CAT_DEFAULT aml_v4l2_debug
+#define DEFAULT_DEVICE_NAME "/dev/video26"
 
 /* This is a minimalist probe, for speed, we only enumerate formats */
 static GstCaps *
@@ -102,114 +103,103 @@ gst_aml_v4l2_probe_template_caps(const gchar *device, gint video_fd,
 }
 
 static gboolean
-gst_aml_v4l2_probe_and_register(GstPlugin *plugin)
+gst_aml_v4l2_register(GstPlugin *plugin)
 {
-    GstAmlV4l2Iterator *it;
     gint video_fd = -1;
     struct v4l2_capability vcap;
     guint32 device_caps;
+    GstCaps *src_caps, *sink_caps;
+    gchar *basename;
 
-    GST_DEBUG("Probing devices");
+    GST_DEBUG("regist aml v4l2 device");
 
-    it = gst_aml_v4l2_iterator_new();
+    GST_DEBUG("open: %s", DEFAULT_DEVICE_NAME);
+    video_fd = open(DEFAULT_DEVICE_NAME, O_RDWR | O_CLOEXEC);
 
-    while (gst_aml_v4l2_iterator_next(it))
+    if (video_fd == -1)
     {
-        GstCaps *src_caps, *sink_caps;
-        gchar *basename;
+        GST_DEBUG("Failed to open %s: %s", DEFAULT_DEVICE_NAME, g_strerror(errno));
+        goto error_tag;
+    }
 
-        if (video_fd >= 0)
-            close(video_fd);
+    memset(&vcap, 0, sizeof(vcap));
 
-        video_fd = open(it->device_path, O_RDWR | O_CLOEXEC);
+    if (ioctl(video_fd, VIDIOC_QUERYCAP, &vcap) < 0)
+    {
+        GST_DEBUG("Failed to get device capabilities: %s", g_strerror(errno));
+        goto error_tag;
+    }
 
-        if (video_fd == -1)
-        {
-            GST_DEBUG("Failed to open %s: %s", it->device_path, g_strerror(errno));
-            continue;
-        }
+    if (vcap.capabilities & V4L2_CAP_DEVICE_CAPS)
+        device_caps = vcap.device_caps;
+    else
+        device_caps = vcap.capabilities;
 
-        memset(&vcap, 0, sizeof(vcap));
+    if (!GST_AML_V4L2_IS_M2M(device_caps)) {
+        goto error_tag;
+    }
 
-        if (ioctl(video_fd, VIDIOC_QUERYCAP, &vcap) < 0)
-        {
-            GST_DEBUG("Failed to get device capabilities: %s", g_strerror(errno));
-            continue;
-        }
 
-        if (vcap.capabilities & V4L2_CAP_DEVICE_CAPS)
-            device_caps = vcap.device_caps;
-        else
-            device_caps = vcap.capabilities;
+    /* get sink supported format (no MPLANE for codec) */
+    sink_caps = gst_caps_merge(gst_aml_v4l2_probe_template_caps(DEFAULT_DEVICE_NAME,
+                                                                video_fd, V4L2_BUF_TYPE_VIDEO_OUTPUT),
+                                gst_aml_v4l2_probe_template_caps(DEFAULT_DEVICE_NAME, video_fd,
+                                                                V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE));
+    GST_DEBUG ("prob sink_caps %" GST_PTR_FORMAT, sink_caps);
 
-        if (!GST_AML_V4L2_IS_M2M(device_caps))
-            continue;
-
-        GST_DEBUG("Probing '%s' located at '%s'",
-                  it->device_name ? it->device_name : (const gchar *)vcap.driver,
-                  it->device_path);
-
-        /* get sink supported format (no MPLANE for codec) */
-        sink_caps = gst_caps_merge(gst_aml_v4l2_probe_template_caps(it->device_path,
-                                                                    video_fd, V4L2_BUF_TYPE_VIDEO_OUTPUT),
-                                   gst_aml_v4l2_probe_template_caps(it->device_path, video_fd,
-                                                                    V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE));
-        GST_DEBUG ("prob sink_caps %" GST_PTR_FORMAT, sink_caps);
-
-        /* get src supported format */
-        src_caps = gst_caps_merge(gst_aml_v4l2_probe_template_caps(it->device_path,
+    /* get src supported format */
+    src_caps = gst_caps_merge(gst_aml_v4l2_probe_template_caps(DEFAULT_DEVICE_NAME,
                                                                    video_fd, V4L2_BUF_TYPE_VIDEO_CAPTURE),
-                                  gst_aml_v4l2_probe_template_caps(it->device_path, video_fd,
+                                  gst_aml_v4l2_probe_template_caps(DEFAULT_DEVICE_NAME, video_fd,
                                                                    V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE));
-        GST_DEBUG ("prob src_caps %" GST_PTR_FORMAT, src_caps);
+    GST_DEBUG ("prob src_caps %" GST_PTR_FORMAT, src_caps);
 
-        /* Skip devices without any supported formats */
-        if (gst_caps_is_empty(sink_caps) || gst_caps_is_empty(src_caps))
-        {
-            gst_caps_unref(sink_caps);
-            gst_caps_unref(src_caps);
-            continue;
-        }
-
-        basename = g_path_get_basename(it->device_path);
-
-        /* Caps won't be freed if the subclass is not instantiated */
-        GST_MINI_OBJECT_FLAG_SET(sink_caps, GST_MINI_OBJECT_FLAG_MAY_BE_LEAKED);
-        GST_MINI_OBJECT_FLAG_SET(src_caps, GST_MINI_OBJECT_FLAG_MAY_BE_LEAKED);
-
-        if (gst_aml_v4l2_is_video_dec(sink_caps, src_caps))
-        {
-            gst_aml_v4l2_video_dec_register(plugin, basename, it->device_path,
-                                            sink_caps, src_caps);
-        }
-
+    /* Skip devices without any supported formats */
+    if (gst_caps_is_empty(sink_caps) || gst_caps_is_empty(src_caps))
+    {
         gst_caps_unref(sink_caps);
         gst_caps_unref(src_caps);
-        g_free(basename);
+        goto error_tag;
     }
+
+    /* Caps won't be freed if the subclass is not instantiated */
+    GST_MINI_OBJECT_FLAG_SET(sink_caps, GST_MINI_OBJECT_FLAG_MAY_BE_LEAKED);
+    GST_MINI_OBJECT_FLAG_SET(src_caps, GST_MINI_OBJECT_FLAG_MAY_BE_LEAKED);
+
+    if (gst_aml_v4l2_is_video_dec(sink_caps, src_caps))
+    {
+        gst_aml_v4l2_video_dec_register(plugin, DEFAULT_DEVICE_NAME, DEFAULT_DEVICE_NAME,
+                                            sink_caps, src_caps);
+    }
+
+    gst_caps_unref(sink_caps);
+    gst_caps_unref(src_caps);
+
 
     if (video_fd >= 0)
         close(video_fd);
 
-    gst_aml_v4l2_iterator_free(it);
-
     return TRUE;
+error_tag:
+    if (video_fd >= 0)
+        close(video_fd);
+    return FALSE;
 }
 
 static gboolean
 plugin_init(GstPlugin *plugin)
 {
-    const gchar *paths[] = {"/dev", "/dev/v4l2", NULL};
-    const gchar *names[] = {"video", NULL};
+    //const gchar *paths[] = {"/dev", "/dev/v4l2", NULL};
+    //const gchar *names[] = {"video", NULL};
 
     GST_DEBUG_CATEGORY_INIT(aml_v4l2_debug, "amlv4l2", 0, "aml V4L2 API calls");
 
     /* Add some depedency, so the dynamic features get updated upon changes in
      * /dev/video* */
-    gst_plugin_add_dependency(plugin,
-                              NULL, paths, names, GST_PLUGIN_DEPENDENCY_FLAG_FILE_NAME_IS_PREFIX);
+    //gst_plugin_add_dependency(plugin,
+    //                          NULL, paths, names, GST_PLUGIN_DEPENDENCY_FLAG_FILE_NAME_IS_PREFIX);
 
-    if (!gst_aml_v4l2_probe_and_register(plugin))
+    if (!gst_aml_v4l2_register(plugin))
         return FALSE;
 
     return TRUE;

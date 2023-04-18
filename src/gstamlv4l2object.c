@@ -439,6 +439,7 @@ gst_aml_v4l2_object_new(GstElement *element,
     {
         const char *default_mode = getenv("GST_DEFAULT_V4L2_BUF_MODE");
         GST_DEBUG("amlmodbuf GST_AML_DEFAULT_V4L2_BUF_MODE:%s", default_mode);
+        //v4l2object->req_mode = GST_V4L2_IO_DMABUF_IMPORT;
         if (default_mode)
         {
             if (strcmp(default_mode, "DMA_BUF_IMPORT") == 0)
@@ -1646,6 +1647,8 @@ gst_aml_v4l2_object_get_caps_info(GstAmlV4l2Object *v4l2object, GstCaps *caps,
     guint32 fourcc = 0, fourcc_nc = 0;
     const gchar *mimetype;
     struct v4l2_fmtdesc *fmt = NULL;
+
+    GST_DEBUG_OBJECT(v4l2object, "got caps: %" GST_PTR_FORMAT, caps);
 
     structure = gst_caps_get_structure(caps, 0);
 
@@ -4563,6 +4566,7 @@ gst_aml_v4l2_object_acquire_format(GstAmlV4l2Object *v4l2object, GstVideoInfo *i
 
     memset(&fmt, 0x00, sizeof(struct v4l2_format));
     fmt.type = v4l2object->type;
+    GST_DEBUG_OBJECT(v4l2object->dbg_obj, "fmt.type:%d", fmt.type);
     if (v4l2object->ioctl(v4l2object->video_fd, VIDIOC_G_FMT, &fmt) < 0)
         goto get_fmt_failed;
 

@@ -1168,7 +1168,7 @@ gst_aml_v4l2_buffer_pool_poll(GstAmlV4l2BufferPool *pool, gboolean wait)
     if ((pool->obj->type == V4L2_BUF_TYPE_VIDEO_CAPTURE || pool->obj->type == V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE) &&
         pool->obj->mode == GST_V4L2_IO_DMABUF_IMPORT)
     {
-        GST_LOG_OBJECT(pool, "CAPTURE DMA don't quit when empty buf");
+        GST_TRACE_OBJECT(pool, "CAPTURE DMA don't quit when empty buf");
     }
     else
     {
@@ -1197,12 +1197,12 @@ gst_aml_v4l2_buffer_pool_poll(GstAmlV4l2BufferPool *pool, gboolean wait)
             goto no_buffers;
     }
 
-    GST_LOG_OBJECT(pool, "polling device");
+    GST_TRACE_OBJECT(pool, "polling device");
 
 again:
     ret = gst_poll_wait(pool->poll, timeout);
 #ifdef GST_AML_SPEC_FLOW_FOR_VBP
-    GST_DEBUG_OBJECT(pool, "amlmodbuf poll timeout:%lld, ret:%d, errno:%d", timeout, ret, errno);
+    GST_TRACE_OBJECT(pool, "amlmodbuf poll timeout:%lld, ret:%d, errno:%d", timeout, ret, errno);
 #endif
     if (G_UNLIKELY(ret < 0))
     {
@@ -1233,9 +1233,10 @@ again:
         if ((pool->obj->type == V4L2_BUF_TYPE_VIDEO_CAPTURE || pool->obj->type == V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE) &&
             pool->obj->mode == GST_V4L2_IO_DMABUF_IMPORT)
         {
-            GST_DEBUG_OBJECT(pool, "amlmodbuf can't get buffer in capture obj dmaimport mode, try release buf from other pool");
+            GST_TRACE_OBJECT(pool, "amlmodbuf can't get buffer in capture obj dmaimport mode, try release buf from other pool");
             gst_aml_v4l2_buffer_pool_dump_stat(pool, GST_DUMP_CAPTURE_BP_STAT_FILENAME, try_num++);
             gst_aml_v4l2_buffer_pool_release_buffer_aml_patch((GstBufferPool *)pool);
+            g_usleep(1000);
             goto again;
         }
         else
@@ -1870,12 +1871,12 @@ gst_aml_v4l2_buffer_pool_release_buffer_aml_patch(GstBufferPool *bpool)
 
         memset(&params, 0, sizeof(GstBufferPoolAcquireParams));
         params.flags = GST_BUFFER_POOL_ACQUIRE_FLAG_DONTWAIT;
-        GST_DEBUG_OBJECT(pool, "amlmodbuf trace in aml release buf flow ready_to_free_buf_num:%d", pool->ready_to_free_buf_num);
+        GST_TRACE_OBJECT(pool, "amlmodbuf trace in aml release buf flow ready_to_free_buf_num:%d", pool->ready_to_free_buf_num);
         while (pool->ready_to_free_buf_num && gst_buffer_pool_acquire_buffer(pool->other_pool, &src, &params) != GST_FLOW_ERROR && src != NULL)
         {
             gint i = 0;
 
-            GST_DEBUG_OBJECT(pool, "amlmodbuf acquire buf:%p form other pool", src);
+            GST_TRACE_OBJECT(pool, "amlmodbuf acquire buf:%p form other pool", src);
             for (; i < VIDEO_MAX_FRAME; i++)
             {
                 GST_DEBUG_OBJECT(pool, "amlmodbuf check index:%d", i);
@@ -1884,15 +1885,15 @@ gst_aml_v4l2_buffer_pool_release_buffer_aml_patch(GstBufferPool *bpool)
                     GstBuffer *bind_drm_buf = gst_mini_object_get_qdata(GST_MINI_OBJECT(pool->read_to_free_bufs[i]), GST_AML_V4L2_IMPORT_QUARK);
                     if (bind_drm_buf == NULL)
                     {
-                        GST_DEBUG_OBJECT(pool, "init flow, bind v4l2 capture buf[%d]:%p with drm buf:%p", i, pool->read_to_free_bufs[i], src);
+                        GST_TRACE_OBJECT(pool, "init flow, bind v4l2 capture buf[%d]:%p with drm buf:%p", i, pool->read_to_free_bufs[i], src);
                     }
                     else if (src != bind_drm_buf)
                     {
-                        GST_DEBUG_OBJECT(pool, "v4l2 capture buf[%d]:%p bind drm buf:%p, not this one:%p, continue match", i, pool->read_to_free_bufs[i], bind_drm_buf, src);
+                        GST_TRACE_OBJECT(pool, "v4l2 capture buf[%d]:%p bind drm buf:%p, not this one:%p, continue match", i, pool->read_to_free_bufs[i], bind_drm_buf, src);
                         continue;
                     }
 
-                    GST_DEBUG_OBJECT(pool, "v4l2 capture buf[%d]:%p found bind drm buf:%p", i, pool->read_to_free_bufs[i], src);
+                    GST_TRACE_OBJECT(pool, "v4l2 capture buf[%d]:%p found bind drm buf:%p", i, pool->read_to_free_bufs[i], src);
                     GstFlowReturn isvalid = GST_FLOW_OK;
                     GstAmlV4l2MemoryGroup *tmp_group = NULL;
 
@@ -1903,12 +1904,12 @@ gst_aml_v4l2_buffer_pool_release_buffer_aml_patch(GstBufferPool *bpool)
                     isvalid = gst_aml_v4l2_is_buffer_valid(pool->read_to_free_bufs[i], &tmp_group);
                     if ((ret != GST_FLOW_OK && isvalid) || gst_aml_v4l2_buffer_pool_qbuf(pool, pool->read_to_free_bufs[i], tmp_group) != GST_FLOW_OK)
                     {
-                        GST_DEBUG_OBJECT(pool, "amlmodbuf go into error flow");
+                        GST_TRACE_OBJECT(pool, "amlmodbuf go into error flow");
                         pclass->release_buffer(bpool, pool->read_to_free_bufs[i]);
                     }
                     pool->read_to_free_bufs[i] = NULL;
                     pool->ready_to_free_buf_num--;
-                    GST_DEBUG_OBJECT(pool, "amlmodbuf queued buf:%d, into v4l2 bp", i);
+                    GST_TRACE_OBJECT(pool, "amlmodbuf queued buf:%d, into v4l2 bp", i);
                     break;
                 }
             }
@@ -1920,7 +1921,7 @@ gst_aml_v4l2_buffer_pool_release_buffer_aml_patch(GstBufferPool *bpool)
                 return FALSE;
             }
         }
-        GST_DEBUG_OBJECT(pool, "update all free drm buf into v4l2 capture buf pool, now ready_to_free_buf_num:%d", pool->ready_to_free_buf_num);
+        GST_TRACE_OBJECT(pool, "update all free drm buf into v4l2 capture buf pool, now ready_to_free_buf_num:%d", pool->ready_to_free_buf_num);
         return TRUE;
     }
     return FALSE;

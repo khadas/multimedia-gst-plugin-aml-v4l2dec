@@ -41,9 +41,9 @@ GST_DEBUG_CATEGORY_STATIC(gst_aml_v4l2_video_dec_debug);
 #undef GST_VIDEO_DECODER_STREAM_LOCK
 #define GST_VIDEO_DECODER_STREAM_LOCK(decoder)                      \
     {                                                               \
-        GST_INFO("aml v4l2 dec locking");                           \
+        GST_TRACE("aml v4l2 dec locking");                           \
         g_rec_mutex_lock(&GST_VIDEO_DECODER(decoder)->stream_lock); \
-        GST_INFO("aml v4l2 dec locked");                            \
+        GST_TRACE("aml v4l2 dec locked");                            \
     }
 #endif
 
@@ -51,9 +51,9 @@ GST_DEBUG_CATEGORY_STATIC(gst_aml_v4l2_video_dec_debug);
 #undef GST_VIDEO_DECODER_STREAM_UNLOCK
 #define GST_VIDEO_DECODER_STREAM_UNLOCK(decoder)                      \
     {                                                                 \
-        GST_INFO("aml v4l2 dec unlocking");                           \
+        GST_TRACE("aml v4l2 dec unlocking");                           \
         g_rec_mutex_unlock(&GST_VIDEO_DECODER(decoder)->stream_lock); \
-        GST_INFO("aml v4l2 dec unlocked");                            \
+        GST_TRACE("aml v4l2 dec unlocked");                            \
     }
 #endif
 
@@ -641,9 +641,9 @@ gst_aml_v4l2_video_dec_get_right_frame(GstVideoDecoder *decoder, GstClockTime pt
     for (l = frames; l != NULL; l = l->next)
     {
         GstVideoCodecFrame *f = l->data;
+
         if (GST_CLOCK_TIME_IS_VALID(pts) && (ABSDIFF(f->pts,pts)) < 1000) {
             frame = f;
-            break;
         } else {
             if (!frame || (GST_CLOCK_TIME_IS_VALID(frame->pts) && GST_CLOCK_TIME_IS_VALID(f->pts) && (frame->pts > f->pts)))
                 frame = f;

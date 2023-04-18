@@ -111,6 +111,7 @@ gst_aml_v4l2_iterator_new(void)
     it->base_idx = 0;
     it->video_idx = -1;
     it->device = NULL;
+    it->parent.device_path = NULL;
 
     return (GstAmlV4l2Iterator *)it;
 }
@@ -122,8 +123,10 @@ gst_aml_v4l2_iterator_next(GstAmlV4l2Iterator *_it)
     static const gchar *dev_base[] = {"/dev/video", "/dev/v4l2/video", NULL};
     gchar *device = NULL;
 
-    g_free((gchar *)it->parent.device_path);
-    it->parent.device_path = NULL;
+    if (it->parent.device_path) {
+        g_free((gchar *)it->parent.device_path);
+        it->parent.device_path = NULL;
+    }
 
     while (device == NULL)
     {
