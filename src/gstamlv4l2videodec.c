@@ -744,7 +744,7 @@ gst_aml_v4l2_video_dec_loop(GstVideoDecoder *decoder)
     {
         GstVideoInfo info;
         GstVideoCodecState *output_state;
-        GstCaps *acquired_caps, *caps, *filter;
+        GstCaps *acquired_caps, *available_caps, *caps, *filter;
         GstStructure *st;
 
         GST_DEBUG_OBJECT(self, "waitting source change event");
@@ -801,15 +801,24 @@ gst_aml_v4l2_video_dec_loop(GstVideoDecoder *decoder)
         acquired_caps = gst_video_info_to_caps(&info);
         GST_DEBUG_OBJECT(self, "Acquired caps: %" GST_PTR_FORMAT, acquired_caps);
         st = gst_caps_get_structure(acquired_caps, 0);
-        gst_structure_remove_fields(st, "colorimetry", "chroma-site",
-                                    NULL);
-        filter = gst_caps_copy(acquired_caps);
+        gst_structure_remove_fields(st, "format", "colorimetry", "chroma-site", NULL);
+
+        /* Probe currently available pixel formats */
+        available_caps = gst_caps_copy(self->probed_srccaps);
+        GST_DEBUG_OBJECT(self, "Available caps: %" GST_PTR_FORMAT, available_caps);
+
+        /* Replace coded size with visible size, we want to negotiate visible size
+         * with downstream, not coded size. */
+        gst_caps_map_in_place(available_caps, gst_aml_v4l2_video_remove_padding, self);
+
+        filter = gst_caps_intersect_full(available_caps, acquired_caps, GST_CAPS_INTERSECT_FIRST);
         caps = gst_caps_copy(filter);
         gst_caps_set_features_simple(caps, gst_caps_features_from_string(GST_CAPS_FEATURE_MEMORY_DMABUF));
         gst_caps_append(filter, caps);
 
         GST_DEBUG_OBJECT(self, "Filtered caps: %" GST_PTR_FORMAT, filter);
         gst_caps_unref(acquired_caps);
+        gst_caps_unref(available_caps);
         caps = gst_pad_peer_query_caps(decoder->srcpad, filter);
         gst_caps_unref(filter);
 

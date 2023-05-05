@@ -1114,6 +1114,13 @@ gst_aml_v4l2_object_fill_format_list(GstAmlV4l2Object *v4l2object,
         GST_LOG_OBJECT(v4l2object->dbg_obj, "pixelformat: %" GST_FOURCC_FORMAT,
                        GST_FOURCC_ARGS(format->pixelformat));
 
+
+        if (V4L2_PIX_FMT_YUV420M == format->pixelformat || V4L2_PIX_FMT_YUV420 == format->pixelformat)
+        {
+            GST_LOG_OBJECT(v4l2object->dbg_obj, "aml v4l2 driver didn't real support YU12 and YM12, ignore it");
+            continue;
+        }
+
         /* sort formats according to our preference;  we do this, because caps
          * are probed in the order the formats are in the list, and the order of
          * formats in the final probed caps matters for things like fixation */
@@ -4613,6 +4620,8 @@ gst_aml_v4l2_object_acquire_format(GstAmlV4l2Object *v4l2object, GstVideoInfo *i
         align.padding_bottom = height - r->height - r->top;
         width = r->width;
         height = r->height;
+        width = (width/2) *2; /* align for dw*/
+        height = (height/2) *2; /* align for dw*/
     }
     GST_DEBUG_OBJECT(v4l2object->dbg_obj, "final w:%d, h:%d", width, height);
 
