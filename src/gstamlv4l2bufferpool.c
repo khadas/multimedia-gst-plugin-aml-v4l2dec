@@ -1400,6 +1400,11 @@ gst_aml_v4l2_buffer_pool_dqbuf(GstAmlV4l2BufferPool *pool, GstBuffer **buffer,
         goto eos;
     if (res != GST_FLOW_OK)
         goto dqbuf_failed;
+    if ( (group->buffer.flags & V4L2_BUF_FLAG_LAST) &&(group->buffer.bytesused == 0) )
+    {
+        GST_LOG_OBJECT (pool,"dequeued empty buffer");
+        return GST_AML_V4L2_FLOW_LAST_BUFFER;
+    }
 
     /* get our GstBuffer with that index from the pool, if the buffer was
      * outstanding we have a serious problem.
@@ -1568,9 +1573,19 @@ gst_aml_v4l2_buffer_pool_dequeue(GstAmlV4l2BufferPool *pool, GstBuffer **buffer,
     {
         GstFlowReturn res_event = gst_aml_v4l2_buffer_pool_dqevent(pool);
         if (res_event != GST_FLOW_OK)
-            return res_event;
+        {
+            /* when drive V4l2 receive cmd_stop, it will finish current decoding frame, then creat
+             * a EOS event and a empty buff. if gstreamer dq EOS event first ,the last frame will be drop,
+             * this a question
+             */
+            if (res_event == GST_AML_V4L2_FLOW_LAST_BUFFER)
+            {
+                GST_DEBUG_OBJECT(pool," reiceive EOS event, drop it");
+            }
+            else
+                return res_event;
+        }
     }
-
     if (res == GST_FLOW_CUSTOM_SUCCESS)
     {
         GST_LOG_OBJECT(pool, "nothing to dequeue");
