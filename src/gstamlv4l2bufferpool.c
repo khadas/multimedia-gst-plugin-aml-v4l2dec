@@ -1422,7 +1422,10 @@ gst_aml_v4l2_buffer_pool_dqbuf(GstAmlV4l2BufferPool *pool, GstBuffer **buffer,
         GST_OBJECT_UNLOCK(pool);
     }
 
-    timestamp = GST_TIMEVAL_TO_TIME(group->buffer.timestamp);
+    if (-1== group->buffer.timestamp.tv_sec)
+        timestamp = GST_CLOCK_TIME_NONE;
+    else
+        timestamp = GST_TIMEVAL_TO_TIME(group->buffer.timestamp);
 
     size = 0;
     vmeta = gst_buffer_get_video_meta(outbuf);
