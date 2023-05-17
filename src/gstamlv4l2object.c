@@ -2761,6 +2761,14 @@ gst_aml_v4l2_object_probe_caps_for_format(GstAmlV4l2Object *v4l2object,
         maxw = MIN(size.stepwise.max_width, G_MAXINT);
         maxh = MIN(size.stepwise.max_height, G_MAXINT);
 
+        /* in this position,updating resolution only to pass the negotiation
+         * actually, the details about resolution refer to function:
+         * gst_aml_v4l2_object_set_format_full for checking.
+         */
+        GST_DEBUG_OBJECT (v4l2object->dbg_obj, "update maxw_maxh to MAX(maxw,maxh)_MAX(maxw,maxh)");
+        maxh = MAX (maxw, maxh);
+        maxw = maxh;
+
         step_w = MAX(size.stepwise.step_width, 1);
         step_h = MAX(size.stepwise.step_height, 1);
 
@@ -3758,6 +3766,25 @@ gst_aml_v4l2_object_set_format_full(GstAmlV4l2Object *v4l2object, GstCaps *caps,
     height = GST_VIDEO_INFO_HEIGHT(&info);
     fps_n = GST_VIDEO_INFO_FPS_N(&info);
     fps_d = GST_VIDEO_INFO_FPS_D(&info);
+
+    GST_DEBUG_OBJECT (v4l2object->dbg_obj, "Check image size");
+    struct v4l2_frmsizeenum size;
+    memset (&size, 0, sizeof (struct v4l2_frmsizeenum));
+    size.index = 0;
+    size.pixel_format = pixelformat;
+    if (v4l2object->ioctl (fd, VIDIOC_ENUM_FRAMESIZES, &size) < 0)
+        return FALSE;
+    if (size.type == V4L2_FRMSIZE_TYPE_STEPWISE)
+    {
+        guint32 maxw, maxh;
+        maxw = MIN (size.stepwise.max_width, G_MAXINT);
+        maxh = MIN (size.stepwise.max_height, G_MAXINT);
+        GST_DEBUG_OBJECT (v4l2object->dbg_obj, "image from caps w_h:%d_%d", width, height);
+        GST_DEBUG_OBJECT (v4l2object->dbg_obj, "v4l2 support max w_h:%d_%d", maxw, maxh);
+        if (width*height > maxw*maxh)
+            return FALSE;
+        GST_DEBUG_OBJECT (v4l2object->dbg_obj, "Check image size ok");
+    }
 
     //set amlogic params here,because we need pix format to set dw mode
     memset(&streamparm, 0x00, sizeof(struct v4l2_streamparm));
