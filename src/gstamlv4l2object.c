@@ -61,6 +61,7 @@ GST_DEBUG_CATEGORY_EXTERN(aml_v4l2_debug);
 #define V4L2_CID_USER_AMLOGIC_BASE (V4L2_CID_USER_BASE + 0x1100)
 #define AML_V4L2_SET_DRMMODE (V4L2_CID_USER_AMLOGIC_BASE + 0)
 #define AML_V4L2_DEC_PARMS_CONFIG (V4L2_CID_USER_AMLOGIC_BASE + 7)
+#define AML_V4L2_SET_STREAM_MODE (V4L2_CID_USER_AMLOGIC_BASE + 9)
 
 enum
 {
@@ -202,6 +203,7 @@ static const GstAmlV4L2FormatDesc gst_aml_v4l2_formats[] = {
 #define GST_AML_V4L2_FORMAT_COUNT (G_N_ELEMENTS(gst_aml_v4l2_formats))
 
 static GSList *gst_aml_v4l2_object_get_format_list(GstAmlV4l2Object *v4l2object);
+static gboolean gst_aml_v4l2_set_control(GstAmlV4l2Object *v4l2object, guint ctl);
 
 #define GST_TYPE_AML_V4L2_DEVICE_FLAGS (gst_aml_v4l2_device_get_type())
 static GType
@@ -401,6 +403,12 @@ void gst_aml_v4l2_object_install_m2m_properties_helper(GObjectClass *gobject_cla
                                     g_param_spec_string("dump-frame-location", "dump frame location",
                                                         "Location of the file to write decoder frames", NULL,
                                                         G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+
+    g_object_class_install_property(gobject_class, PROP_STREAM_MODE,
+                                    g_param_spec_boolean("stream-mode", "Configure v4l2 stream mode",
+                                                         "TRUE for stream mode, FALSE for frame mode",
+                                                         FALSE,
+                                                         G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 }
 
 /* Support for 32bit off_t, this wrapper is casting off_t to gint64 */
@@ -468,6 +476,7 @@ gst_aml_v4l2_object_new(GstElement *element,
     v4l2object->colors = NULL;
 
     v4l2object->keep_aspect = TRUE;
+    v4l2object->stream_mode = FALSE;
 
     v4l2object->n_v4l2_planes = 0;
 
@@ -665,6 +674,9 @@ gst_aml_v4l2_object_set_property_helper(GstAmlV4l2Object *v4l2object,
         g_free(v4l2object->dumpframefile);
         v4l2object->dumpframefile = g_value_dup_string(value);
         break;
+    case PROP_STREAM_MODE:
+        v4l2object->stream_mode = g_value_get_boolean(value);
+        break;
     default:
         return FALSE;
         break;
@@ -765,6 +777,9 @@ gst_aml_v4l2_object_get_property_helper(GstAmlV4l2Object *v4l2object,
         break;
     case PROP_DUMP_FRAME_LOCATION:
         g_value_set_string(value, v4l2object->dumpframefile);
+        break;
+    case PROP_STREAM_MODE:
+        g_value_set_boolean(value, v4l2object->stream_mode);
         break;
     default:
         return FALSE;
@@ -3395,6 +3410,12 @@ set_amlogic_vdec_parm(GstAmlV4l2Object *v4l2object, struct v4l2_streamparm *stre
     int major = 0,minor = 0;
     struct utsname info;
 
+    decParm->cfg.data[0] = 0;
+    decParm->cfg.data[1] = 0;
+    decParm->cfg.data[2] = 0;
+    decParm->cfg.data[3] = 0;
+    decParm->cfg.data[4] = 0;
+
     decParm->cfg.metadata_config_flag = 1 << 13;
 
     if (v4l2object->type == V4L2_BUF_TYPE_VIDEO_OUTPUT || v4l2object->type == V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE)
@@ -5000,6 +5021,20 @@ gst_aml_v4l2_object_probe_caps(GstAmlV4l2Object *v4l2object, GstCaps *filter)
         gst_caps_unref(tmp);
     }
 
+    if (v4l2object->stream_mode)
+    {
+        GST_INFO_OBJECT(v4l2object->dbg_obj, "ret caps: %" GST_PTR_FORMAT, ret);
+        for (guint i = 0; i < gst_caps_get_size(ret); i++)
+        {
+            GstStructure *s = gst_caps_get_structure(ret, i);
+            if (s)
+                gst_structure_remove_field(s, "alignment");
+
+            GST_DEBUG("i:%d, s:%p", i, s);
+        }
+        GST_INFO_OBJECT(v4l2object->dbg_obj, "new ret caps: %" GST_PTR_FORMAT, ret);
+    }
+
     GST_INFO_OBJECT(v4l2object->dbg_obj, "probed caps: %" GST_PTR_FORMAT, ret);
 
     return ret;
@@ -5589,55 +5624,91 @@ gst_aml_v4l2_object_try_import(GstAmlV4l2Object *obj, GstBuffer *buffer)
     return TRUE;
 }
 
+static gboolean gst_aml_v4l2_set_control(GstAmlV4l2Object *v4l2object, guint ctl)
+{
+    int rc;
+    struct v4l2_queryctrl queryctrl;
+    struct v4l2_control control;
+
+    GstAmlV4l2VideoDec *self = (GstAmlV4l2VideoDec *)v4l2object->element;
+    self->is_secure_path = TRUE;
+
+    memset(&queryctrl, 0, sizeof(queryctrl));
+    queryctrl.id = ctl;
+
+    rc = v4l2object->ioctl(v4l2object->video_fd, VIDIOC_QUERYCTRL, &queryctrl);
+    if (rc == 0)
+    {
+        if (!(queryctrl.flags & V4L2_CTRL_FLAG_DISABLED))
+        {
+            memset(&control, 0, sizeof(control));
+            control.id = ctl;
+            control.value = 1;
+            rc = v4l2object->ioctl(v4l2object->video_fd, VIDIOC_S_CTRL, &control);
+            if (rc != 0)
+            {
+                GST_ERROR_OBJECT(v4l2object->dbg_obj, "set ctl:0x%x fail rc %d", ctl, rc);
+                return FALSE;
+            }
+            GST_DEBUG_OBJECT(v4l2object->dbg_obj, "set ctl:0x%x succ", ctl);
+            return TRUE;
+        }
+        else
+        {
+            GST_DEBUG_OBJECT(v4l2object->dbg_obj, "ctl:0x%x is disabled", ctl);
+            return TRUE;
+        }
+    }
+    else
+    {
+        GST_ERROR_OBJECT(v4l2object->dbg_obj, "VIDIOC_QUERYCTRL for 0x:%x fail", ctl);
+        return FALSE;
+    }
+}
+
+
 gboolean gst_aml_v4l2_set_drm_mode(GstAmlV4l2Object *v4l2object)
 {
     /* On AmLogic, output obj use of GST_V4L2_IO_DMABUF_IMPORT implies secure memory */
     if (v4l2object->req_mode == GST_V4L2_IO_DMABUF_IMPORT)
     {
-        int rc;
-        struct v4l2_queryctrl queryctrl;
-        struct v4l2_control control;
 
-        GstAmlV4l2VideoDec *self = (GstAmlV4l2VideoDec *)v4l2object->element;
-        self->is_secure_path = TRUE;
-
-//#define V4L2_CID_USER_AMLOGIC_BASE (V4L2_CID_USER_BASE + 0x1100)
-//#define AML_V4L2_SET_DRMMODE (V4L2_CID_USER_AMLOGIC_BASE + 0)
-        memset(&queryctrl, 0, sizeof(queryctrl));
-        queryctrl.id = AML_V4L2_SET_DRMMODE;
-
-        rc = v4l2object->ioctl(v4l2object->video_fd, VIDIOC_QUERYCTRL, &queryctrl);
-        if (rc == 0)
+        if (gst_aml_v4l2_set_control(v4l2object, AML_V4L2_SET_DRMMODE))
         {
-            if (!(queryctrl.flags & V4L2_CTRL_FLAG_DISABLED))
-            {
-                memset(&control, 0, sizeof(control));
-                control.id = AML_V4L2_SET_DRMMODE;
-                control.value = 1;
-                rc = v4l2object->ioctl(v4l2object->video_fd, VIDIOC_S_CTRL, &control);
-                if (rc != 0)
-                {
-                    GST_ERROR_OBJECT(v4l2object, "AML_V4L2_SET_DRMMODE fail: rc %d", rc);
-                    return FALSE;
-                }
-                GST_DEBUG_OBJECT(v4l2object, "AML_V4L2_SET_DRMMODE set succ");
-                return TRUE;
-            }
-            else
-            {
-                GST_DEBUG_OBJECT(v4l2object, "AML_V4L2_SET_DRMMODE is disabled");
-                return TRUE;
-            }
+            GST_DEBUG_OBJECT(v4l2object->dbg_obj, "AML_V4L2_SET_DRMMODE set succ");
+            return TRUE;
         }
         else
         {
-            GST_ERROR_OBJECT(v4l2object, "VIDIOC_QUERYCTRL for AML_V4L2_SET_DRMMODE fail");
+            GST_ERROR_OBJECT(v4l2object->dbg_obj, "AML_V4L2_SET_DRMMODE set fail");
             return FALSE;
         }
     }
     else
     {
-        GST_DEBUG_OBJECT(v4l2object, "req mode is not GST_V4L2_IO_DMABUF_IMPORT, DRM mode does not need to be configured");
+        GST_DEBUG_OBJECT(v4l2object->dbg_obj, "req mode is not GST_V4L2_IO_DMABUF_IMPORT, DRM mode does not need to be configured");
+        return TRUE;
+    }
+}
+
+gboolean gst_aml_v4l2_set_stream_mode(GstAmlV4l2Object *v4l2object)
+{
+    if (v4l2object->stream_mode)
+    {
+        if (gst_aml_v4l2_set_control(v4l2object, AML_V4L2_SET_STREAM_MODE))
+        {
+            GST_DEBUG_OBJECT(v4l2object->dbg_obj, "AML_V4L2_SET_STREAM_MODE set succ");
+            return TRUE;
+        }
+        else
+        {
+            GST_ERROR_OBJECT(v4l2object->dbg_obj, "AML_V4L2_SET_STREAM_MODE set fail");
+            return FALSE;
+        }
+    }
+    else
+    {
+        GST_DEBUG_OBJECT(v4l2object->dbg_obj, "req mode is not stream mode, frame mode in configured by default");
         return TRUE;
     }
 }

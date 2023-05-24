@@ -1655,6 +1655,7 @@ gst_aml_v4l2_buffer_pool_acquire_buffer(GstBufferPool *bpool, GstBuffer **buffer
             GST_DEBUG_OBJECT(pool, "amlmodbuf return free buf before acquire buf");
             gst_aml_v4l2_buffer_pool_release_buffer_aml_patch(bpool);
             ret = gst_aml_v4l2_buffer_pool_dequeue(pool, buffer, FALSE);
+            GST_DEBUG_OBJECT(pool, "amlmodbuf dequeue return ret:%d", ret);
 #else
             /* just dequeue a buffer, we basically use the queue of v4l2 as the
              * storage for our buffers. This function does poll first so we can

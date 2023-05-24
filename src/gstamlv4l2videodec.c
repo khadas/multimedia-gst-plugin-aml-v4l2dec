@@ -402,6 +402,12 @@ gst_aml_v4l2_video_dec_set_format(GstVideoDecoder *decoder,
         goto done;
     }
 
+    if ((ret = gst_aml_v4l2_set_stream_mode(self->v4l2output)) == FALSE)
+    {
+        GST_ERROR_OBJECT(self, "config output stream mode error");
+        goto done;
+    }
+
     ret = gst_aml_v4l2_object_set_format(self->v4l2output, state->caps, &error);
 
     gst_caps_replace(&self->probed_srccaps, NULL);

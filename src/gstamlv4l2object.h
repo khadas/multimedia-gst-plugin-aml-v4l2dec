@@ -194,6 +194,7 @@ struct _GstAmlV4l2Object
     gulong frequency;
     GstStructure *extra_controls;
     gboolean keep_aspect;
+    gboolean stream_mode;
     GValue *par;
 
     /* funcs */
@@ -256,7 +257,8 @@ GType gst_v4l2_object_get_type(void);
         PROP_EXTRA_CONTROLS,     \
         PROP_PIXEL_ASPECT_RATIO, \
         PROP_FORCE_ASPECT_RATIO, \
-        PROP_DUMP_FRAME_LOCATION
+        PROP_DUMP_FRAME_LOCATION, \
+        PROP_STREAM_MODE
 
 /* create/destroy */
 GstAmlV4l2Object *gst_aml_v4l2_object_new(GstElement *element,
@@ -348,6 +350,7 @@ gboolean gst_aml_v4l2_get_attribute(GstAmlV4l2Object *v4l2object, int attribute,
 gboolean gst_aml_v4l2_set_attribute(GstAmlV4l2Object *v4l2object, int attribute, const int value);
 gboolean gst_aml_v4l2_set_controls(GstAmlV4l2Object *v4l2object, GstStructure *controls);
 gboolean gst_aml_v4l2_set_drm_mode(GstAmlV4l2Object *v4l2object);
+gboolean gst_aml_v4l2_set_stream_mode(GstAmlV4l2Object *v4l2object);
 gint gst_aml_v4l2_object_get_outstanding_capture_buf_num(GstAmlV4l2Object *v4l2object);
 
 G_END_DECLS
