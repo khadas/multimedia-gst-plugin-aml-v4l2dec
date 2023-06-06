@@ -957,8 +957,23 @@ gst_aml_v4l2_video_dec_loop(GstVideoDecoder *decoder)
     {
         if (!GST_CLOCK_TIME_IS_VALID(frame->pts))
         {
-            double rate = ((double)self->input_state->info.fps_n/(double)self->input_state->info.fps_d);
-            GST_BUFFER_TIMESTAMP(buffer) = self->last_out_pts + 1000000000LL/rate;
+            if (!GST_CLOCK_TIME_IS_VALID(self->last_out_pts))
+            {
+                if (GST_CLOCK_TIME_IS_VALID(frame->dts))
+                {
+                    GST_BUFFER_TIMESTAMP(buffer) = frame->dts;
+                }
+                else
+                {
+                    GST_WARNING_OBJECT (decoder,"sorry,we have no baseline to calculate pts");
+                    goto beach;
+                }
+            }
+            else
+            {
+                double rate = ((double)self->input_state->info.fps_n/(double)self->input_state->info.fps_d);
+                GST_BUFFER_TIMESTAMP(buffer) = self->last_out_pts + 1000000000LL/rate;
+            }
         }
         self->last_out_pts = GST_BUFFER_TIMESTAMP(buffer);
         frame->output_buffer = buffer;
@@ -1298,6 +1313,7 @@ gst_aml_v4l2_video_dec_sink_event(GstVideoDecoder *decoder, GstEvent *event)
         }
         g_mutex_unlock (&self->res_chg_lock);
 
+        self->last_out_pts = GST_CLOCK_TIME_NONE;
         gst_aml_v4l2_object_unlock(self->v4l2output);
         gst_aml_v4l2_object_unlock(self->v4l2capture);
         break;
@@ -1380,6 +1396,7 @@ static void
 gst_aml_v4l2_video_dec_init(GstAmlV4l2VideoDec *self)
 {
     /* V4L2 object are created in subinstance_init */
+    self->last_out_pts = GST_CLOCK_TIME_NONE;
     self->is_secure_path = FALSE;
     self->is_res_chg = FALSE;
     g_mutex_init(&self->res_chg_lock);
