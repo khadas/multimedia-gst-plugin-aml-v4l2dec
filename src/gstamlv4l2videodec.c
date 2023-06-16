@@ -636,11 +636,13 @@ gst_aml_v4l2_video_dec_get_oldest_frame(GstVideoDecoder *decoder)
 }
 
 static GstVideoCodecFrame *
-gst_aml_v4l2_video_dec_get_right_frame(GstVideoDecoder *decoder, GstClockTime pts)
+gst_aml_v4l2_video_dec_get_right_frame_for_frame_mode(GstVideoDecoder *decoder, GstClockTime pts)
 {
     GstVideoCodecFrame *frame = NULL;
     GList *frames, *l;
     gint count = 0;
+
+    GST_LOG_OBJECT (decoder, "trace in with pts: %" GST_TIME_FORMAT, GST_TIME_ARGS(pts));
 
     frames = gst_video_decoder_get_frames(decoder);
 
@@ -668,7 +670,79 @@ gst_aml_v4l2_video_dec_get_right_frame(GstVideoDecoder *decoder, GstClockTime pt
 
     g_list_free_full(frames, (GDestroyNotify)gst_video_codec_frame_unref);
 
+    GST_LOG_OBJECT (decoder, "trace out ret:%p", frame);
     return frame;
+}
+
+static GstVideoCodecFrame *
+gst_aml_v4l2_video_dec_get_right_frame_for_stream_mode(GstVideoDecoder *decoder, GstClockTime pts)
+{
+    GstVideoCodecFrame *frame = NULL;
+    GList *frames, *l;
+    gint count = 0;
+
+    GST_LOG_OBJECT (decoder, "trace in with pts: %" GST_TIME_FORMAT, GST_TIME_ARGS(pts));
+
+    frames = gst_video_decoder_get_frames(decoder);
+    guint frames_len = 0;
+    frames_len = g_list_length(frames);
+    GST_LOG_OBJECT (decoder, "got frames list len:%d", frames_len);
+
+    frame = frames->data;
+
+    for (l = frames; l != NULL; l = l->next)
+    {
+        GstVideoCodecFrame *f = l->data;
+
+        if (GST_CLOCK_TIME_IS_VALID(pts) && (ABSDIFF(f->pts, pts)) < 1000)
+        {
+            /* found the right frame */
+            frame = f;
+            break;
+        }
+        else if(GST_CLOCK_TIME_IS_VALID(pts) && (f->pts < pts))
+        {
+            GST_LOG_OBJECT(decoder,
+                "stream mode drop frame %d %" GST_TIME_FORMAT,
+                frame->system_frame_number, GST_TIME_ARGS(frame->pts));
+
+            gst_video_codec_frame_ref(f);
+            // gst_video_decoder_drop_frame(decoder, f);
+            gst_video_decoder_release_frame(decoder, f);
+        }
+        else
+        {
+            GST_LOG_OBJECT (decoder, "dbg");
+        }
+    }
+
+    if (frame)
+    {
+        guint l_len = 0;
+        l = gst_video_decoder_get_frames(decoder);
+        l_len = g_list_length(l);
+        g_list_free_full(l, (GDestroyNotify)gst_video_codec_frame_unref);
+
+        GST_LOG_OBJECT(decoder,
+                       "frame is %d %" GST_TIME_FORMAT " and %d frames left",
+                       frame->system_frame_number, GST_TIME_ARGS(frame->pts), l_len);
+        gst_video_codec_frame_ref(frame);
+    }
+
+    g_list_free_full(frames, (GDestroyNotify)gst_video_codec_frame_unref);
+
+    GST_LOG_OBJECT (decoder, "trace out ret:%p", frame);
+    return frame;
+}
+
+static GstVideoCodecFrame *
+gst_aml_v4l2_video_dec_get_right_frame(GstVideoDecoder *decoder, GstClockTime pts)
+{
+    GstAmlV4l2VideoDec *self = (GstAmlV4l2VideoDec *)decoder;
+    if (self->v4l2output->stream_mode)
+        return gst_aml_v4l2_video_dec_get_right_frame_for_stream_mode(decoder, pts);
+    else
+        return gst_aml_v4l2_video_dec_get_right_frame_for_frame_mode(decoder, pts);
 }
 
 static gboolean
