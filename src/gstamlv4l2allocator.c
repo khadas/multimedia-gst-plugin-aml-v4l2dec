@@ -1493,6 +1493,11 @@ gst_aml_v4l2_allocator_dqbuf(GstAmlV4l2Allocator *allocator,
                 GST_WARNING_OBJECT(allocator, "V4L2 provided buffer has bytesused %" G_GUINT32_FORMAT " which is too small to include data_offset %" G_GUINT32_FORMAT, group->planes[i].bytesused,
                                    group->planes[i].data_offset);
                 size = group->planes[i].bytesused;
+                /*if this buffer is last buffer,bytesused is 0,so size equal 0,this cause assert fail of gst_memory_resize*/
+                if ( (group->buffer.flags & V4L2_BUF_FLAG_LAST) &&(group->buffer.bytesused == 0))
+                {
+                    size = group->planes[i].length;
+                }
             }
 
             if (G_LIKELY(size + offset <= group->mem[i]->maxsize))

@@ -990,9 +990,10 @@ gst_aml_v4l2_video_dec_loop(GstVideoDecoder *decoder)
 
         g_object_unref(pool);
 
-        if (ret == GST_AML_V4L2_FLOW_LAST_BUFFER) {
+        if (GST_BUFFER_FLAG_IS_SET(buffer,GST_AML_V4L2_BUFFER_FLAG_LAST_EMPTY)) {
           GST_LOG_OBJECT(decoder, "Get GST_AML_V4L2_FLOW_LAST_BUFFER");
           self->v4l2capture->need_drop_event = TRUE;
+          gst_aml_v4l2_buffer_pool_process(v4l2_pool, &buffer);
           goto beach;
         }
 

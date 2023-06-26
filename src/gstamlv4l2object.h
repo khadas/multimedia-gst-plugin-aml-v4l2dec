@@ -86,6 +86,9 @@ typedef gulong ioctl_req_t;
 #define GST_AML_V4L2_SET_ACTIVE(o) ((o)->active = TRUE)
 #define GST_AML_V4L2_SET_INACTIVE(o) ((o)->active = FALSE)
 
+/*define v4l2 last empty buffer flag*/
+#define GST_AML_V4L2_BUFFER_FLAG_LAST_EMPTY (GST_BUFFER_FLAG_LAST << 1)
+
 /* checks whether the current v4lv4l2object has already been open()'ed or not */
 #define GST_AML_V4L2_CHECK_OPEN(v4l2object)                        \
     if (!GST_AML_V4L2_IS_OPEN(v4l2object))                         \

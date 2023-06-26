@@ -1400,11 +1400,6 @@ gst_aml_v4l2_buffer_pool_dqbuf(GstAmlV4l2BufferPool *pool, GstBuffer **buffer,
         goto eos;
     if (res != GST_FLOW_OK)
         goto dqbuf_failed;
-    if ( (group->buffer.flags & V4L2_BUF_FLAG_LAST) &&(group->buffer.bytesused == 0) )
-    {
-        GST_LOG_OBJECT (pool,"dequeued empty buffer");
-        return GST_AML_V4L2_FLOW_LAST_BUFFER;
-    }
 
     /* get our GstBuffer with that index from the pool, if the buffer was
      * outstanding we have a serious problem.
@@ -1537,6 +1532,11 @@ gst_aml_v4l2_buffer_pool_dqbuf(GstAmlV4l2BufferPool *pool, GstBuffer **buffer,
 
 done:
     *buffer = outbuf;
+    if ( (group->buffer.flags & V4L2_BUF_FLAG_LAST) &&(group->buffer.bytesused == 0) )
+    {
+        GST_DEBUG_OBJECT (pool,"dequeued empty buffer");
+        GST_BUFFER_FLAG_SET(*buffer, GST_AML_V4L2_BUFFER_FLAG_LAST_EMPTY);
+    }
 
     if (!V4L2_TYPE_IS_OUTPUT(obj->type))
     {
@@ -2189,7 +2189,7 @@ gst_aml_v4l2_buffer_pool_process(GstAmlV4l2BufferPool *pool, GstBuffer **buf)
     GstBufferPool *bpool = GST_BUFFER_POOL_CAST(pool);
     GstAmlV4l2Object *obj = pool->obj;
 
-    GST_DEBUG_OBJECT(pool, "process buffer %p, buf_pool:%p, v4l2 output pool:%p", buf, (*buf)->pool, bpool);
+    GST_DEBUG_OBJECT(pool, "process buffer %p, buf_pool:%p, v4l2 output pool:%p", *buf, (*buf)->pool, bpool);
 
     if (GST_BUFFER_POOL_IS_FLUSHING(pool))
         return GST_FLOW_FLUSHING;
