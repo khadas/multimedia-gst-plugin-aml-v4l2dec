@@ -104,6 +104,14 @@ enum
 #endif
 };
 
+enum
+{
+  SIGNAL_DECODED_PTS,
+  MAX_SIGNAL
+};
+
+static guint g_signals[MAX_SIGNAL]= {0};
+
 #define gst_aml_v4l2_video_dec_parent_class parent_class
 G_DEFINE_ABSTRACT_TYPE(GstAmlV4l2VideoDec, gst_aml_v4l2_video_dec,
                        GST_TYPE_VIDEO_DECODER);
@@ -1015,6 +1023,10 @@ gst_aml_v4l2_video_dec_loop(GstVideoDecoder *decoder)
 
         GST_LOG_OBJECT(decoder, "Process output buffer (switching flow outstanding num:%d)", self->v4l2capture->outstanding_buf_num);
         ret = gst_aml_v4l2_buffer_pool_process(v4l2_pool, &buffer);
+
+        GST_DEBUG_OBJECT(decoder, "send pts:%lld - %" GST_TIME_FORMAT, GST_BUFFER_PTS(buffer), GST_TIME_ARGS(GST_BUFFER_PTS(buffer)));
+        g_signal_emit (self, g_signals[SIGNAL_DECODED_PTS], 0, GST_BUFFER_PTS(buffer));
+
         if (ret == GST_AML_V4L2_FLOW_SOURCE_CHANGE)
         {
             gst_aml_v4l2_object_stop(self->v4l2capture);
@@ -1376,6 +1388,18 @@ gst_aml_v4l2_video_dec_sink_event(GstVideoDecoder *decoder, GstEvent *event)
 
     switch (type)
     {
+    case GST_EVENT_STREAM_START:
+    {
+        GstStructure *s;
+        GstEvent *event;
+        GST_DEBUG_OBJECT(self, "new private event");
+        s = gst_structure_new("private_signal", "obj_ptr", G_TYPE_POINTER, self, "sig_name", G_TYPE_STRING, "decoded-pts", NULL);
+        event = gst_event_new_custom (GST_EVENT_CUSTOM_UPSTREAM, s);
+        GST_DEBUG_OBJECT(self, "before Send private_signal Event :%p", event);
+        gst_pad_push_event (decoder->sinkpad, event);
+        GST_DEBUG_OBJECT(self, "after Send private_signal Event :%p", event);
+        break;
+    }
     case GST_EVENT_FLUSH_START:
         GST_DEBUG_OBJECT(self, "flush start");
 
@@ -1554,6 +1578,17 @@ gst_aml_v4l2_video_dec_class_init(GstAmlV4l2VideoDecClass *klass)
 
     element_class->change_state =
         GST_DEBUG_FUNCPTR(gst_aml_v4l2_video_dec_change_state);
+
+  g_signals[SIGNAL_DECODED_PTS] = g_signal_new ("decoded-pts",
+        G_TYPE_FROM_CLASS(GST_ELEMENT_CLASS(klass)),
+        G_SIGNAL_RUN_LAST,
+        0,    /* class offset */
+        NULL, /* accumulator */
+        NULL, /* accu data */
+        g_cclosure_marshal_generic,
+        G_TYPE_NONE,
+        1,
+        G_TYPE_UINT64);
 
     gst_aml_v4l2_object_install_m2m_properties_helper(gobject_class);
 #if GST_IMPORT_LGE_PROP
