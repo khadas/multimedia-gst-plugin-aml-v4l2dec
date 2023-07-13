@@ -818,6 +818,24 @@ gst_v4l2_drop_event (GstAmlV4l2Object * v4l2object)
 }
 
 static void
+gst_aml_v4l2_video_dec_set_fence(GstVideoDecoder *decoder,GstVideoInfo *info)
+{
+    GstAmlV4l2VideoDec *self = GST_AML_V4L2_VIDEO_DEC(decoder);
+    GstStructure *s;
+    GstEvent *event;
+
+    guint fence_num = (info->interlace_mode == GST_VIDEO_INTERLACE_MODE_INTERLEAVED) ?
+        GST_AML_V4L2_DEFAULT_CAP_BUF_MARGIN : self->v4l2capture->min_buffers-2;
+    s = gst_structure_new ("video_fence","fence_num",G_TYPE_UINT,fence_num,NULL);
+    if (s)
+    {
+        event = gst_event_new_custom (GST_EVENT_CUSTOM_DOWNSTREAM, s);
+        GST_DEBUG_OBJECT(self,"Send video_fence Event: %"GST_PTR_FORMAT,event);
+        gst_pad_push_event (decoder->srcpad, event);
+    }
+}
+
+static void
 gst_aml_v4l2_video_dec_loop(GstVideoDecoder *decoder)
 {
     GstAmlV4l2VideoDec *self = GST_AML_V4L2_VIDEO_DEC(decoder);
@@ -867,11 +885,14 @@ gst_aml_v4l2_video_dec_loop(GstVideoDecoder *decoder)
             peer = gst_pad_get_peer (decoder->srcpad);
             if (peer)
             {
-              s = gst_structure_new_empty ("IS_SVP");
-              event = gst_event_new_custom (GST_EVENT_CUSTOM_DOWNSTREAM, s);
-              gst_pad_send_event (peer, event);
-              GST_DEBUG_OBJECT(self, "Send SVP Event");
-              gst_object_unref (peer);
+                s = gst_structure_new_empty ("IS_SVP");
+                if (s)
+                {
+                    event = gst_event_new_custom (GST_EVENT_CUSTOM_DOWNSTREAM, s);
+                    gst_pad_send_event (peer, event);
+                    GST_DEBUG_OBJECT(self, "Send SVP Event");
+                }
+                gst_object_unref (peer);
             }
         }
 
@@ -928,7 +949,7 @@ gst_aml_v4l2_video_dec_loop(GstVideoDecoder *decoder)
         else
             gst_aml_v4l2_clear_error(&error);
         gst_caps_unref(caps);
-
+        gst_aml_v4l2_video_dec_set_fence(decoder,&info);
         output_state = gst_video_decoder_set_output_state(decoder,
                                                           info.finfo->format, info.width, info.height, self->input_state);
 
