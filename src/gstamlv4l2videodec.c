@@ -660,12 +660,21 @@ gst_aml_v4l2_video_dec_get_right_frame_for_frame_mode(GstVideoDecoder *decoder, 
 
         if (GST_CLOCK_TIME_IS_VALID(pts) && (ABSDIFF(f->pts,pts)) < 1000) {
             frame = f;
-        } else {
-            if (!frame || (GST_CLOCK_TIME_IS_VALID(frame->pts) && GST_CLOCK_TIME_IS_VALID(f->pts) && (frame->pts > f->pts)))
-                frame = f;
         }
-
         count++;
+    }
+
+    if (!frame)
+    {
+        for (l = frames; l != NULL; l = l->next)
+        {
+            GstVideoCodecFrame *f = l->data;
+            if (!GST_CLOCK_TIME_IS_VALID(f->pts))
+            {
+                frame = f;
+            }
+            GST_DEBUG("The pts of the expected output frame is invalid");
+        }
     }
 
     if (frame)
