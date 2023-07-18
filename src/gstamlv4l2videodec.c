@@ -835,6 +835,24 @@ gst_aml_v4l2_video_dec_set_fence(GstVideoDecoder *decoder)
 }
 
 static void
+gst_aml_v4l2_video_dec_set_output_status(GstVideoDecoder *decoder,GstVideoInfo info)
+{
+    GstAmlV4l2VideoDec *self = GST_AML_V4L2_VIDEO_DEC(decoder);
+    GstVideoCodecState *output_state;
+    output_state = gst_video_decoder_set_output_state(decoder,
+                   info.finfo->format, info.width, info.height, self->input_state);
+    if (output_state)
+    {
+        output_state->info.interlace_mode = info.interlace_mode;
+        output_state->allocation_caps =gst_video_info_to_caps(&info);
+        info.width = self->v4l2output->info.width;
+        info.height = self->v4l2output->info.height;
+        output_state->caps =gst_video_info_to_caps(&info);
+        gst_video_codec_state_unref(output_state);
+    }
+}
+
+static void
 gst_aml_v4l2_video_dec_loop(GstVideoDecoder *decoder)
 {
     GstAmlV4l2VideoDec *self = GST_AML_V4L2_VIDEO_DEC(decoder);
@@ -848,7 +866,6 @@ gst_aml_v4l2_video_dec_loop(GstVideoDecoder *decoder)
     if (G_UNLIKELY(!GST_AML_V4L2_IS_ACTIVE(self->v4l2capture)))
     {
         GstVideoInfo info;
-        GstVideoCodecState *output_state;
         GstCaps *acquired_caps, *available_caps, *caps, *filter;
         GstStructure *st;
 
@@ -954,13 +971,7 @@ gst_aml_v4l2_video_dec_loop(GstVideoDecoder *decoder)
             gst_aml_v4l2_clear_error(&error);
         gst_caps_unref(caps);
         gst_aml_v4l2_video_dec_set_fence(decoder);
-        output_state = gst_video_decoder_set_output_state(decoder,
-                                                          info.finfo->format, info.width, info.height, self->input_state);
-
-        /* Copy the rest of the information, there might be more in the future */
-        output_state->info.interlace_mode = info.interlace_mode;
-        gst_video_codec_state_unref(output_state);
-
+        gst_aml_v4l2_video_dec_set_output_status(decoder,info);
         if (!gst_video_decoder_negotiate(decoder))
         {
             if (GST_PAD_IS_FLUSHING(decoder->srcpad))
