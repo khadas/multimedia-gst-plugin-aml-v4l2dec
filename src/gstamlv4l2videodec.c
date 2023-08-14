@@ -848,16 +848,40 @@ gst_aml_v4l2_video_dec_set_output_status(GstVideoDecoder *decoder,GstVideoInfo i
 {
     GstAmlV4l2VideoDec *self = GST_AML_V4L2_VIDEO_DEC(decoder);
     GstVideoCodecState *output_state;
+    struct v4l2_selection sel;
+    struct v4l2_rect *r = NULL;
+    GstStructure *s;
+    gint width = 0;
+    gint height = 0;
     output_state = gst_video_decoder_set_output_state(decoder,
                    info.finfo->format, info.width, info.height, self->input_state);
+    memset(&sel, 0, sizeof(struct v4l2_selection));
+    sel.type = self->v4l2capture->type;
+    sel.target = V4L2_SEL_TGT_COMPOSE_DEFAULT;
+    if (self->v4l2capture->ioctl(self->v4l2capture->video_fd, VIDIOC_G_SELECTION, &sel) >= 0)
+    {
+        r = &sel.r;
+        width = (r->width/2)*2;
+        height = (r->height/2)*2;
+        GST_DEBUG_OBJECT(self, "w:%d  h:%d  ",width,height);
+    }
+    else
+        GST_DEBUG_OBJECT(self, "iotcl error");
     if (output_state)
     {
         output_state->info.interlace_mode = info.interlace_mode;
         output_state->allocation_caps =gst_video_info_to_caps(&info);
-        info.width = self->v4l2output->info.width;
-        info.height = self->v4l2output->info.height;
         output_state->caps =gst_video_info_to_caps(&info);
-        gst_video_codec_state_unref(output_state);
+        s = gst_caps_get_structure(output_state->caps, 0);
+        if (s)
+        {
+            gst_structure_set(s,"coded_width",G_TYPE_INT,info.width,NULL);
+            gst_structure_set(s,"coded_height",G_TYPE_INT,info.height,NULL);
+            gst_structure_set(s,"width",G_TYPE_INT,width,NULL);
+            gst_structure_set(s,"height",G_TYPE_INT,height,NULL);
+            GST_DEBUG_OBJECT(self, "output_state->caps: %" GST_PTR_FORMAT, output_state->caps);
+            gst_video_codec_state_unref(output_state);
+        }
     }
 }
 
