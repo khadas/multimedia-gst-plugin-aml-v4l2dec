@@ -409,6 +409,11 @@ void gst_aml_v4l2_object_install_m2m_properties_helper(GObjectClass *gobject_cla
                                                          "TRUE for stream mode, FALSE for frame mode",
                                                          FALSE,
                                                          G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+    g_object_class_install_property(gobject_class, PROP_LOW_LATENCY_MODE,
+                                    g_param_spec_boolean("low-latency-mode", "set low latency mode",
+                                                         "enable is TURE, disable is FALSE, default is disable",
+                                                         FALSE,
+                                                         G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 }
 
 /* Support for 32bit off_t, this wrapper is casting off_t to gint64 */
@@ -676,6 +681,10 @@ gst_aml_v4l2_object_set_property_helper(GstAmlV4l2Object *v4l2object,
         break;
     case PROP_STREAM_MODE:
         v4l2object->stream_mode = g_value_get_boolean(value);
+        break;
+    case PROP_LOW_LATENCY_MODE:
+        v4l2object->low_latency_mode = g_value_get_boolean(value);
+        GST_DEBUG_OBJECT(v4l2object, "set low latency: %d",v4l2object->low_latency_mode);
         break;
     default:
         return FALSE;
@@ -2387,6 +2396,13 @@ gst_aml_v4l2_object_add_colorspace(GstAmlV4l2Object *v4l2object, GstStructure *s
     cinfo.primaries = 0;
     gst_aml_v4l2_object_fill_colorimetry_list(&list, &cinfo);
 
+    GST_DEBUG("deal: caps with colorimetry 2,6,14,0");
+    cinfo.range = 2;
+    cinfo.matrix = 6;
+    cinfo.transfer = 14;
+    cinfo.primaries = 0;
+    gst_aml_v4l2_object_fill_colorimetry_list(&list, &cinfo);
+
     if (gst_value_list_get_size(&list) > 0)
         gst_structure_take_value(s, "colorimetry", &list);
     else
@@ -3417,7 +3433,7 @@ set_amlogic_vdec_parm(GstAmlV4l2Object *v4l2object, struct v4l2_streamparm *stre
     decParm->cfg.data[4] = 0;
 
     decParm->cfg.metadata_config_flag = 1 << 13;
-
+    decParm->cfg.low_latency_mode = v4l2object->low_latency_mode;
     if (v4l2object->type == V4L2_BUF_TYPE_VIDEO_OUTPUT || v4l2object->type == V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE)
     {
         /*set bit12 value to 1,

@@ -76,6 +76,7 @@ struct _GstAmlV4l2VideoDec
     GCond res_chg_cond;
 
     GstClockTime last_out_pts;
+    gboolean codec_data_inject;
 
 #if GST_IMPORT_LGE_PROP
     /* LGE context */

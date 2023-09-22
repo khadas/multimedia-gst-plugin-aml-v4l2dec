@@ -357,6 +357,16 @@ gst_aml_v4l2_video_dec_set_format(GstVideoDecoder *decoder,
 
     GST_DEBUG_OBJECT(self, "Setting format: %" GST_PTR_FORMAT, state->caps);
     GstCapsFeatures *const features = gst_caps_get_features(state->caps, 0);
+    GstStructure *s = gst_caps_get_structure(state->caps,0);
+    if (s && gst_structure_has_field(s,"format"))
+    {
+        if (!strcmp("XVID",gst_structure_get_string(s,"format")))
+        {
+            GST_DEBUG_OBJECT(self, "This is a DIVX file, cannot support");
+            ret = FALSE;
+            goto done;
+        }
+    }
 
     if (gst_caps_features_contains(features, GST_CAPS_FEATURE_MEMORY_DMABUF))
         self->v4l2output->req_mode = GST_V4L2_IO_DMABUF_IMPORT;
@@ -1257,6 +1267,7 @@ gst_aml_v4l2_video_dec_handle_frame(GstVideoDecoder *decoder,
         GST_VIDEO_DECODER_STREAM_UNLOCK(decoder);
         ret =
             gst_aml_v4l2_buffer_pool_process(GST_AML_V4L2_BUFFER_POOL(self->v4l2output->pool), &codec_data);
+        self->codec_data_inject = TRUE;
         GST_VIDEO_DECODER_STREAM_LOCK(decoder);
 
         gst_buffer_unref(codec_data);
@@ -1292,6 +1303,14 @@ gst_aml_v4l2_video_dec_handle_frame(GstVideoDecoder *decoder,
     if (!processed)
     {
         GST_VIDEO_DECODER_STREAM_UNLOCK(decoder);
+        if (!self->codec_data_inject && self->input_state->codec_data)
+        {
+            ret = gst_aml_v4l2_buffer_pool_process
+            (GST_AML_V4L2_BUFFER_POOL(self->v4l2output->pool), &self->input_state->codec_data);
+            self->codec_data_inject = TRUE;
+            if (ret != GST_FLOW_OK)
+                goto send_codec_failed;
+        }
         ret =
             gst_aml_v4l2_buffer_pool_process(GST_AML_V4L2_BUFFER_POOL(self->v4l2output->pool), &frame->input_buffer);
         GST_VIDEO_DECODER_STREAM_LOCK(decoder);
@@ -1322,6 +1341,9 @@ gst_aml_v4l2_video_dec_handle_frame(GstVideoDecoder *decoder,
     return ret;
 
     /* ERRORS */
+send_codec_failed:
+    GST_ERROR_OBJECT(self, "send codec_date fialed.ret is %d",ret);
+    goto drop;
 not_negotiated:
 {
     GST_ERROR_OBJECT(self, "not negotiated");
@@ -1495,6 +1517,7 @@ gst_aml_v4l2_video_dec_sink_event(GstVideoDecoder *decoder, GstEvent *event)
     case GST_EVENT_FLUSH_START:
         /* The processing thread should stop now, wait for it */
         gst_pad_stop_task(decoder->srcpad);
+        self->codec_data_inject = FALSE;
         GST_DEBUG_OBJECT(self, "flush start done");
         break;
     default:
@@ -1567,6 +1590,7 @@ gst_aml_v4l2_video_dec_init(GstAmlV4l2VideoDec *self)
     self->is_secure_path = FALSE;
     self->is_res_chg = FALSE;
     self->is_interlace = FALSE;
+    self->codec_data_inject = FALSE;
     g_mutex_init(&self->res_chg_lock);
     g_cond_init(&self->res_chg_cond);
 #if GST_IMPORT_LGE_PROP

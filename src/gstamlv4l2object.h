@@ -197,6 +197,7 @@ struct _GstAmlV4l2Object
     gulong frequency;
     GstStructure *extra_controls;
     gboolean keep_aspect;
+    gboolean low_latency_mode;
     gboolean stream_mode;
     GValue *par;
 
@@ -261,7 +262,8 @@ GType gst_v4l2_object_get_type(void);
         PROP_PIXEL_ASPECT_RATIO, \
         PROP_FORCE_ASPECT_RATIO, \
         PROP_DUMP_FRAME_LOCATION, \
-        PROP_STREAM_MODE
+        PROP_STREAM_MODE, \
+        PROP_LOW_LATENCY_MODE
 
 /* create/destroy */
 GstAmlV4l2Object *gst_aml_v4l2_object_new(GstElement *element,
