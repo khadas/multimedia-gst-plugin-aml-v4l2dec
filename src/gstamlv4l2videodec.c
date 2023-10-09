@@ -964,12 +964,7 @@ gst_aml_v4l2_video_dec_loop(GstVideoDecoder *decoder)
 
         if (!gst_aml_v4l2_object_acquire_format(self->v4l2capture, &info))
             goto not_negotiated;
-        if (info.interlace_mode == GST_VIDEO_INTERLACE_MODE_INTERLEAVED)
-        {
-            GST_DEBUG_OBJECT(self,"change interlace to progressive");
-            info.interlace_mode = GST_VIDEO_INTERLACE_MODE_PROGRESSIVE;
-            self->is_interlace = TRUE;
-        }
+
         /* Create caps from the acquired format, remove the format field */
         acquired_caps = gst_video_info_to_caps(&info);
         GST_DEBUG_OBJECT(self, "Acquired caps: %" GST_PTR_FORMAT, acquired_caps);
@@ -1058,7 +1053,7 @@ gst_aml_v4l2_video_dec_loop(GstVideoDecoder *decoder)
 
         ret = gst_buffer_pool_acquire_buffer(pool, &buffer, NULL);
         //calculate a new pts for interlace stream
-        if (ret == GST_FLOW_OK && self->is_interlace)
+        if (ret == GST_FLOW_OK && self->v4l2capture->info.interlace_mode == GST_VIDEO_INTERLACE_MODE_INTERLEAVED)
         {
             //if buffer pts is valid, reduce 1/2 duration
             if (GST_BUFFER_DURATION_IS_VALID(buffer))
@@ -1589,7 +1584,6 @@ gst_aml_v4l2_video_dec_init(GstAmlV4l2VideoDec *self)
     self->last_out_pts = GST_CLOCK_TIME_NONE;
     self->is_secure_path = FALSE;
     self->is_res_chg = FALSE;
-    self->is_interlace = FALSE;
     self->codec_data_inject = FALSE;
     g_mutex_init(&self->res_chg_lock);
     g_cond_init(&self->res_chg_cond);

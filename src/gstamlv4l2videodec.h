@@ -69,7 +69,6 @@ struct _GstAmlV4l2VideoDec
     /* flags */
     gboolean is_secure_path;
     gboolean is_res_chg;
-    gboolean is_interlace;
 
     /* resolution change lock */
     GMutex res_chg_lock;
