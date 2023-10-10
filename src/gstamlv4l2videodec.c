@@ -347,6 +347,69 @@ gst_aml_v4l2_video_dec_stop(GstVideoDecoder *decoder)
 }
 
 static gboolean
+gst_aml_v4l2_video_dec_codec_chg(GstVideoDecoder *decoder,
+                                  GstVideoCodecState *state)
+{
+    GstAmlV4l2VideoDec *self = GST_AML_V4L2_VIDEO_DEC(decoder);
+    GstStructure *s_old = NULL;
+    GstStructure *s_new = NULL;
+
+    // first play, must set foramt;
+    if (!self->input_state)
+        return TRUE;
+
+    if (self->input_state->caps)
+         s_old = gst_caps_get_structure(self->input_state->caps,0);
+    if (state->caps)
+         s_new = gst_caps_get_structure(state->caps,0);
+
+    if (s_new && s_old && strcmp(gst_structure_get_name(s_new),gst_structure_get_name(s_old)))
+        return TRUE;
+    return FALSE;
+}
+
+static gboolean
+gst_aml_v4l2_video_dec_res_chg(GstVideoDecoder *decoder,
+                                  GstVideoCodecState *state)
+{
+    GstAmlV4l2VideoDec *self = GST_AML_V4L2_VIDEO_DEC(decoder);
+    gboolean ret = FALSE;
+    gint width_new = -1,height_new = -1,width_old = -1,height_old = -1;
+    GstStructure *s_old = NULL;
+    GstStructure *s_new = NULL;
+
+    // first play, must set foramt;
+    if (!self->input_state)
+    {
+        ret = TRUE;
+        goto done;
+    }
+
+    if (self->input_state->caps)
+         s_old = gst_caps_get_structure(self->input_state->caps,0);
+    if (state->caps)
+         s_new = gst_caps_get_structure(state->caps,0);
+
+    if (s_new && gst_structure_has_field(s_new,"width") && gst_structure_has_field(s_new,"height"))
+    {
+        gst_structure_get_int(s_new,"width",&width_new);
+        gst_structure_get_int(s_new,"height",&height_new);
+    }
+    if (s_old && gst_structure_has_field(s_old,"width") && gst_structure_has_field(s_old,"height"))
+    {
+        gst_structure_get_int(s_old,"width",&width_old);
+        gst_structure_get_int(s_old,"height",&height_old);
+    }
+
+    if (width_new != width_old || height_new != height_old)
+        ret = TRUE;
+
+done:
+    GST_DEBUG_OBJECT(self, "ret is %d",ret);
+    return ret;
+}
+
+static gboolean
 gst_aml_v4l2_video_dec_set_format(GstVideoDecoder *decoder,
                                   GstVideoCodecState *state)
 {
@@ -356,6 +419,14 @@ gst_aml_v4l2_video_dec_set_format(GstVideoDecoder *decoder,
     GstCaps *caps;
 
     GST_DEBUG_OBJECT(self, "Setting format: %" GST_PTR_FORMAT, state->caps);
+    if (self->input_state)
+    {
+        if (gst_aml_v4l2_video_dec_res_chg(decoder,state) || gst_aml_v4l2_video_dec_codec_chg(decoder,state))
+            GST_DEBUG_OBJECT(self, "resolution or codec changed");
+        else
+            goto done;
+    }
+
     GstCapsFeatures *const features = gst_caps_get_features(state->caps, 0);
     GstStructure *s = gst_caps_get_structure(state->caps,0);
     if (s && gst_structure_has_field(s,"format"))
