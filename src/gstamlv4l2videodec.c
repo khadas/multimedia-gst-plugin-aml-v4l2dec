@@ -911,7 +911,6 @@ gst_aml_v4l2_video_dec_loop(GstVideoDecoder *decoder)
         GstVideoInfo info;
         GstCaps *acquired_caps, *available_caps, *caps, *filter;
         GstStructure *st;
-
         GST_DEBUG_OBJECT(self, "waitting source change event");
         /* Wait until received SOURCE_CHANGE event to get right video format */
         while (self->v4l2capture->can_wait_event && self->v4l2capture->need_wait_event)
@@ -919,6 +918,8 @@ gst_aml_v4l2_video_dec_loop(GstVideoDecoder *decoder)
             ret = gst_aml_v4l2_object_dqevent(self->v4l2capture);
             if (ret == GST_AML_V4L2_FLOW_SOURCE_CHANGE)
             {
+                //let flush start event blocked until capture buffer pool actived
+                self->is_res_chg = TRUE;
                 GST_DEBUG_OBJECT(self, "Received source change event");
                 break;
             }
@@ -1176,7 +1177,13 @@ flushing:
 beach:
     GST_DEBUG_OBJECT(decoder, "Leaving output thread: %s",
                      gst_flow_get_name(ret));
-
+    if (self->is_res_chg) {
+        //unblock flush start event
+        g_mutex_lock(&self->res_chg_lock);
+        self->is_res_chg = FALSE;
+        g_cond_signal(&self->res_chg_cond);
+        g_mutex_unlock(&self->res_chg_lock);
+    }
     gst_buffer_replace(&buffer, NULL);
     self->output_flow = ret;
     gst_aml_v4l2_object_unlock(self->v4l2output);
