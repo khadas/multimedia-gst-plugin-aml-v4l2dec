@@ -1564,6 +1564,24 @@ gst_aml_v4l2_video_dec_sink_event(GstVideoDecoder *decoder, GstEvent *event)
         GST_DEBUG_OBJECT(self, "after Send private_signal Event :%p", event);
         break;
     }
+    case GST_EVENT_CAPS:
+    {
+        GstCaps *caps;
+        GstStructure *structure;
+
+        gst_event_parse_caps (event, &caps);
+        structure= gst_caps_get_structure(caps, 0);
+        if ( gst_structure_has_field(structure, "parsed") )
+        {
+            gboolean parsed = TRUE;
+            if ( gst_structure_get_boolean( structure, "parsed", &parsed ) )
+            {
+                self->v4l2output->stream_mode = !parsed;
+                GST_DEBUG("frame parsed:%d, set stream_mode to %d", parsed, self->v4l2output->stream_mode);
+            }
+        }
+        break;
+    }
     case GST_EVENT_FLUSH_START:
         GST_DEBUG_OBJECT(self, "flush start");
 
@@ -1874,6 +1892,18 @@ gst_aml_v4l2_video_dec_set_metadata(GstStructure *s, GstAmlV4l2VideoDecCData *cd
     else if (gst_structure_has_name(s, "video/x-av1"))
     {
         SET_META("AV1");
+    }
+    else if (gst_structure_has_name(s, "video/x-avs"))
+    {
+        SET_META("AVS");
+    }
+    else if (gst_structure_has_name(s, "video/x-avs2"))
+    {
+        SET_META("AVS2");
+    }
+    else if (gst_structure_has_name(s, "video/x-avs3"))
+    {
+        SET_META("AVS3");
     }
     else if (gst_structure_has_name(s, "video/x-bayer"))
     {
