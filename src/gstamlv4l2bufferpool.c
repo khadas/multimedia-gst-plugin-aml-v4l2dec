@@ -741,8 +741,6 @@ gst_aml_v4l2_buffer_pool_streamoff(GstAmlV4l2BufferPool *pool)
             GST_WARNING_OBJECT(pool, "STREAMOFF failed with errno %d (%s)",
                                errno, g_strerror(errno));
 
-        pool->streaming = FALSE;
-
         GST_DEBUG_OBJECT(pool, "Stopped streaming");
 
         if (pool->vallocator)
@@ -810,6 +808,7 @@ gst_aml_v4l2_buffer_pool_streamoff(GstAmlV4l2BufferPool *pool)
             }
         }
     }
+    pool->streaming = FALSE;
 }
 
 static gboolean
@@ -1169,6 +1168,7 @@ gst_aml_v4l2_buffer_pool_poll(GstAmlV4l2BufferPool *pool, gboolean wait)
         pool->obj->mode == GST_V4L2_IO_DMABUF_IMPORT)
     {
         GST_TRACE_OBJECT(pool, "CAPTURE DMA don't quit when empty buf");
+        timeout = 5*1000*1000; //5ms
     }
     else
     {
@@ -1225,8 +1225,24 @@ again:
     }
 
     if (gst_poll_fd_has_error(pool->poll, &pool->pollfd))
+    {
+        //if v4l2 don't have capture buffer, we will poll a error,it cause v4l2dec loop thread exit
+        //so we should wait capture buffer release and queue it to v4l2,after this,we try poll again
+        if ((pool->obj->type == V4L2_BUF_TYPE_VIDEO_CAPTURE || pool->obj->type == V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE) &&
+            pool->obj->mode == GST_V4L2_IO_DMABUF_IMPORT)
+        {
+            if (pool->num_queued == 0)
+            {
+                ret = 0;
+                GST_TRACE_OBJECT(pool,"ignore error when no capture buffer on v4l2");
+                g_usleep(4000);
+                goto wait_buffer_queue;
+            }
+        }
         goto select_error;
+    }
 
+wait_buffer_queue:
     if (ret == 0)
     {
 #ifdef GST_AML_SPEC_FLOW_FOR_VBP
@@ -1236,7 +1252,6 @@ again:
             GST_TRACE_OBJECT(pool, "amlmodbuf can't get buffer in capture obj dmaimport mode, try release buf from other pool");
             gst_aml_v4l2_buffer_pool_dump_stat(pool, GST_DUMP_CAPTURE_BP_STAT_FILENAME, try_num++);
             gst_aml_v4l2_buffer_pool_release_buffer_aml_patch((GstBufferPool *)pool);
-            g_usleep(1000);
             goto again;
         }
         else
