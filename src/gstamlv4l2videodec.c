@@ -1126,10 +1126,24 @@ gst_aml_v4l2_video_dec_loop(GstVideoDecoder *decoder)
         g_object_unref(pool);
 
         if (ret == GST_FLOW_OK && GST_BUFFER_FLAG_IS_SET(buffer,GST_AML_V4L2_BUFFER_FLAG_LAST_EMPTY)) {
-          GST_LOG_OBJECT(decoder, "Get GST_AML_V4L2_FLOW_LAST_BUFFER");
-          self->v4l2capture->need_drop_event = TRUE;
-          gst_aml_v4l2_buffer_pool_process(v4l2_pool, &buffer);
-          goto beach;
+            GST_LOG_OBJECT(decoder, "Get GST_AML_V4L2_FLOW_LAST_BUFFER");
+            self->v4l2capture->need_drop_event = TRUE;
+            gst_aml_v4l2_buffer_pool_process(v4l2_pool, &buffer);
+            if (self->is_res_chg) {
+                //we must release last buffer
+                gst_buffer_unref(buffer);
+                //if resolution changed event received,we should set need_drop_event to false
+                self->v4l2capture->need_drop_event = FALSE;
+                gst_aml_v4l2_object_stop(self->v4l2capture);
+                //unblock flush start event
+                g_mutex_lock(&self->res_chg_lock);
+                self->is_res_chg = FALSE;
+                g_cond_signal(&self->res_chg_cond);
+                g_mutex_unlock(&self->res_chg_lock);
+                return;
+            } else {
+                goto beach;
+            }
         }
 
         if (ret == GST_AML_V4L2_FLOW_SOURCE_CHANGE)
@@ -1139,8 +1153,6 @@ gst_aml_v4l2_video_dec_loop(GstVideoDecoder *decoder)
             g_mutex_lock (&self->res_chg_lock);
             self->is_res_chg = TRUE;
             g_mutex_unlock (&self->res_chg_lock);
-
-            gst_aml_v4l2_object_stop(self->v4l2capture);
             return;
         }
 
