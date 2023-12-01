@@ -4700,7 +4700,7 @@ gst_aml_v4l2_object_acquire_format(GstAmlV4l2Object *v4l2object, GstVideoInfo *i
     }
 
     dw_mode = gst_aml_v4l2_object_get_dw_mode(v4l2object);
-    if (r && (dw_mode >= 0 && dw_mode != 16))
+    if (r)
     {
         align.padding_left = r->left;
         align.padding_top = r->top;
@@ -4708,8 +4708,11 @@ gst_aml_v4l2_object_acquire_format(GstAmlV4l2Object *v4l2object, GstVideoInfo *i
         align.padding_bottom = height - r->height - r->top;
         width = r->width;
         height = r->height;
-        width = (width/2) *2; /* align for dw*/
-        height = (height/2) *2; /* align for dw*/
+        if (dw_mode >= 0 && dw_mode != 16)
+        {
+            width = (width/2) *2; /* align for dw*/
+            height = (height/2) *2; /* align for dw*/
+        }
     }
     GST_DEBUG_OBJECT(v4l2object->dbg_obj, "final w:%d, h:%d", width, height);
 
