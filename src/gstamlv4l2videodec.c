@@ -1562,6 +1562,7 @@ gst_aml_v4l2_video_dec_sink_event(GstVideoDecoder *decoder, GstEvent *event)
     {
         GstCaps *caps;
         GstStructure *structure;
+        gint num, denom;
 
         gst_event_parse_caps (event, &caps);
         structure= gst_caps_get_structure(caps, 0);
@@ -1573,6 +1574,26 @@ gst_aml_v4l2_video_dec_sink_event(GstVideoDecoder *decoder, GstEvent *event)
                 self->v4l2output->stream_mode = !parsed;
                 GST_DEBUG("frame parsed:%d, set stream_mode to %d", parsed, self->v4l2output->stream_mode);
             }
+        }
+
+        if (( gst_structure_get_fraction( structure, "pixel-aspect-ratio", &num, &denom ) ) &&
+            ( !self->v4l2capture->have_set_par ) )
+        {
+            if ( (num <= 0) || (denom <= 0) )
+            {
+                num= denom= 1;
+            }
+
+            if ( self->v4l2capture->par )
+            {
+                g_value_unset(self->v4l2capture->par);
+                g_free(self->v4l2capture->par);
+            }
+
+            self->v4l2capture->par = g_new0(GValue, 1);
+            g_value_init(self->v4l2capture->par, GST_TYPE_FRACTION);
+            gst_value_set_fraction(self->v4l2capture->par, num, denom);
+            GST_DEBUG_OBJECT(self, "get pixel aspect ratio %d:%d",  num, denom);
         }
         break;
     }

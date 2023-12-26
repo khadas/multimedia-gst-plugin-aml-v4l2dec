@@ -485,6 +485,7 @@ gst_aml_v4l2_object_new(GstElement *element,
 
     v4l2object->keep_aspect = TRUE;
     v4l2object->stream_mode = FALSE;
+    v4l2object->have_set_par = FALSE;
 
     v4l2object->n_v4l2_planes = 0;
 
@@ -671,6 +672,7 @@ gst_aml_v4l2_object_set_property_helper(GstAmlV4l2Object *v4l2object,
             gst_value_set_fraction(v4l2object->par, 1, 1);
         }
 
+        v4l2object->have_set_par = TRUE;
         GST_DEBUG_OBJECT(v4l2object->dbg_obj, "set PAR to %d/%d",
                          gst_value_get_fraction_numerator(v4l2object->par),
                          gst_value_get_fraction_denominator(v4l2object->par));
@@ -4650,11 +4652,13 @@ gst_aml_v4l2_object_acquire_format(GstAmlV4l2Object *v4l2object, GstVideoInfo *i
     struct v4l2_format fmt;
     struct v4l2_crop crop;
     struct v4l2_selection sel;
+    struct v4l2_cropcap cropcap;
     struct v4l2_rect *r = NULL;
     GstVideoFormat format;
     guint width, height;
     GstVideoAlignment align;
     gint dw_mode;
+    gdouble pixelAspectRatio = 0.0;
 
     gst_video_info_init(info);
     gst_video_alignment_reset(&align);
@@ -4737,6 +4741,33 @@ gst_aml_v4l2_object_acquire_format(GstAmlV4l2Object *v4l2object, GstVideoInfo *i
 
     gst_aml_v4l2_object_save_format(v4l2object, fmtdesc, &fmt, info, &align);
 
+    if (v4l2object->par)
+    {
+        width = gst_value_get_fraction_numerator(v4l2object->par);
+        height = gst_value_get_fraction_denominator(v4l2object->par);
+        pixelAspectRatio = (gdouble)width/(gdouble)height;
+    }
+
+    if (!v4l2object->par || pixelAspectRatio == 1.0)
+    {
+        memset(&cropcap, 0, sizeof(cropcap));
+        width= height= 1;
+        cropcap.type = v4l2object->type;
+        if (v4l2object->ioctl(v4l2object->video_fd, VIDIOC_CROPCAP, &cropcap) >= 0)
+        {
+            width= cropcap.pixelaspect.denominator;
+            height= cropcap.pixelaspect.numerator;
+            GST_DEBUG("cropcap: pixel aspect ratio %d:%d",  width, height);
+            if ( !width || !height )
+            {
+               GST_DEBUG("force pixel aspect of 1:1");
+               width= height= 1;
+            }
+        }
+
+        GST_VIDEO_INFO_PAR_N(info) = width;
+        GST_VIDEO_INFO_PAR_D(info) = height;
+    }
     /* Shall we setup the pool ? */
 
     return TRUE;
@@ -4981,6 +5012,9 @@ gst_aml_v4l2_object_probe_caps(GstAmlV4l2Object *v4l2object, GstCaps *filter)
 
     ret = gst_caps_new_empty();
 
+// At this time, decoder will return defult aspect, and it is not usful.
+// so, do not probe cropcap at this time and do this action after decoding.
+#if 0
     if (v4l2object->keep_aspect && !v4l2object->par)
     {
         struct v4l2_cropcap cropcap;
@@ -5003,6 +5037,7 @@ gst_aml_v4l2_object_probe_caps(GstAmlV4l2Object *v4l2object, GstCaps *filter)
                                    cropcap.pixelaspect.denominator);
         }
     }
+#endif
 
     for (walk = formats; walk; walk = walk->next)
     {

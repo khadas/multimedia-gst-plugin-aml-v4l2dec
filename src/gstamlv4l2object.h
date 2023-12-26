@@ -200,6 +200,7 @@ struct _GstAmlV4l2Object
     gboolean low_latency_mode;
     gboolean stream_mode;
     GValue *par;
+    gboolean have_set_par;
 
     /* funcs */
     GstAmlV4l2GetInOutFunction get_in_out_func;
