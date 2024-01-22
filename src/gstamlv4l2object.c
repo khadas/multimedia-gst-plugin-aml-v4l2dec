@@ -880,6 +880,13 @@ gst_aml_v4l2_object_close(GstAmlV4l2Object *v4l2object)
         v4l2object->par = NULL;
     }
 
+    if (v4l2object->fps)
+    {
+        g_value_unset(v4l2object->fps);
+        g_free(v4l2object->fps);
+        v4l2object->fps = NULL;
+    }
+
     if (v4l2object->channel)
     {
         g_free(v4l2object->channel);
@@ -4767,6 +4774,12 @@ gst_aml_v4l2_object_acquire_format(GstAmlV4l2Object *v4l2object, GstVideoInfo *i
 
         GST_VIDEO_INFO_PAR_N(info) = width;
         GST_VIDEO_INFO_PAR_D(info) = height;
+    }
+
+    if (v4l2object->fps)
+    {
+        GST_VIDEO_INFO_FPS_N(info) = gst_value_get_fraction_numerator(v4l2object->fps);
+        GST_VIDEO_INFO_FPS_D(info) = gst_value_get_fraction_denominator(v4l2object->fps);
     }
     /* Shall we setup the pool ? */
 

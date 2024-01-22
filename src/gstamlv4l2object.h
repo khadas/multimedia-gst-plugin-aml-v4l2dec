@@ -201,6 +201,7 @@ struct _GstAmlV4l2Object
     gboolean stream_mode;
     GValue *par;
     gboolean have_set_par;
+    GValue *fps;
 
     /* funcs */
     GstAmlV4l2GetInOutFunction get_in_out_func;

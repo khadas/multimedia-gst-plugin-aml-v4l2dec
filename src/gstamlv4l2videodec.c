@@ -1576,6 +1576,23 @@ gst_aml_v4l2_video_dec_sink_event(GstVideoDecoder *decoder, GstEvent *event)
             }
         }
 
+        if ( gst_structure_get_fraction( structure, "framerate", &num, &denom ) )
+        {
+            if ( denom == 0 ) denom= 1;
+
+            if (self->v4l2capture->fps)
+            {
+                g_value_unset(self->v4l2capture->fps);
+                g_free(self->v4l2capture->fps);
+            }
+
+            self->v4l2capture->fps = g_new0(GValue, 1);
+            g_value_init(self->v4l2capture->fps, GST_TYPE_FRACTION);
+            gst_value_set_fraction(self->v4l2capture->fps, num, denom);
+
+            GST_DEBUG_OBJECT(self, "get framerate ratio %d:%d",  num, denom);
+        }
+
         if (( gst_structure_get_fraction( structure, "pixel-aspect-ratio", &num, &denom ) ) &&
             ( !self->v4l2capture->have_set_par ) )
         {
