@@ -4771,10 +4771,10 @@ gst_aml_v4l2_object_acquire_format(GstAmlV4l2Object *v4l2object, GstVideoInfo *i
                width= height= 1;
             }
         }
-
-        GST_VIDEO_INFO_PAR_N(info) = width;
-        GST_VIDEO_INFO_PAR_D(info) = height;
     }
+
+    GST_VIDEO_INFO_PAR_N(info) = width;
+    GST_VIDEO_INFO_PAR_D(info) = height;
 
     if (v4l2object->fps)
     {
