@@ -60,6 +60,7 @@ GST_DEBUG_CATEGORY_EXTERN(aml_v4l2_debug);
 
 #define V4L2_CID_USER_AMLOGIC_BASE (V4L2_CID_USER_BASE + 0x1100)
 #define AML_V4L2_SET_DRMMODE (V4L2_CID_USER_AMLOGIC_BASE + 0)
+#define AML_V4L2_GET_FILMGRAIN_INFO (V4L2_CID_USER_AMLOGIC_BASE + 3)
 #define AML_V4L2_DEC_PARMS_CONFIG (V4L2_CID_USER_AMLOGIC_BASE + 7)
 #define AML_V4L2_SET_STREAM_MODE (V4L2_CID_USER_AMLOGIC_BASE + 9)
 
@@ -3448,6 +3449,59 @@ gst_aml_v4l2_video_colorimetry_matches(const GstVideoColorimetry *cinfo,
     return FALSE;
 }
 
+static gboolean needSpecConfigForFg(GstAmlV4l2Object *v4l2object)
+{
+    gboolean result= FALSE;
+    int fd= -1;
+    char valstr[64];
+    const char* path= "/sys/class/video/film_grain_support";
+    uint32_t val= 0;
+    int rc;
+    struct v4l2_control ctl;
+
+    GST_LOG("configForFilmGrain: enter");
+    fd= open(path, O_RDONLY|O_CLOEXEC);
+    if ( fd < 0 )
+    {
+       GST_DEBUG("unable to open file (%s)", path);
+       goto exit;
+    }
+
+    memset(valstr, 0, sizeof(valstr));
+    read(fd, valstr, sizeof(valstr) - 1);
+    valstr[strlen(valstr)] = '\0';
+
+    if ( sscanf(valstr, "%u", &val) < 1)
+    {
+       GST_DEBUG("unable to get flag from: (%s)", valstr);
+       goto exit;
+    }
+
+    GST_LOG("got film_grain_support:%d from node", val);
+    if (val != 0)
+    {
+        goto exit;
+    }
+
+    memset( &ctl, 0, sizeof(ctl));
+    ctl.id= AML_V4L2_GET_FILMGRAIN_INFO;
+    v4l2object->ioctl(v4l2object->video_fd, VIDIOC_G_CTRL, ctl);
+    GST_LOG("got VIDIOC_G_CTRL value: %d", ctl.value);
+    if (ctl.value == 0)
+    {
+        goto exit;
+    }
+
+    result= TRUE;
+
+exit:
+    if ( fd >= 0 )
+    {
+       close(fd);
+    }
+    GST_LOG("configForFilmGrain: exit: result %d", result);
+    return result;
+}
 static void
 set_amlogic_vdec_parm(GstAmlV4l2Object *v4l2object, struct v4l2_streamparm *streamparm, GstCaps *caps, guint32 pixFormat)
 {
@@ -3458,21 +3512,20 @@ set_amlogic_vdec_parm(GstAmlV4l2Object *v4l2object, struct v4l2_streamparm *stre
     gboolean use_ext_config = FALSE;
     int major = 0,minor = 0;
     struct utsname info;
-
-    decParm->cfg.data[0] = 0;
-    decParm->cfg.data[1] = 0;
-    decParm->cfg.data[2] = 0;
-    decParm->cfg.data[3] = 0;
-    decParm->cfg.data[4] = 0;
-
-    decParm->cfg.metadata_config_flag = 1 << 13;
-    decParm->cfg.low_latency_mode = v4l2object->low_latency_mode;
     if (v4l2object->type == V4L2_BUF_TYPE_VIDEO_OUTPUT || v4l2object->type == V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE)
     {
         /*set bit12 value to 1,
         *v4l2 output 0 pts of second interlace field frame */
-        //decParm->cfg.metadata_config_flag |= (1 << 12);
+        decParm->cfg.metadata_config_flag |= (1 << 12);
         decParm->parms_status = V4L2_CONFIG_PARM_DECODE_CFGINFO;
+
+        decParm->cfg.metadata_config_flag |= 1 << 13;
+
+        /*set bit18 value to 1
+         *release vpp in advance */
+        decParm->cfg.metadata_config_flag |= (1 << 18);
+        decParm->cfg.low_latency_mode = v4l2object->low_latency_mode;
+
         switch (pixFormat)
         {
             default:
@@ -3501,60 +3554,54 @@ set_amlogic_vdec_parm(GstAmlV4l2Object *v4l2object, struct v4l2_streamparm *stre
             case 256:
             case 512:
                 decParm->cfg.double_write_mode = dwMode;
-                decParm->parms_status |= V4L2_CONFIG_PARM_DECODE_CFGINFO;
                 break;
             }
         }
         GST_DEBUG_OBJECT(v4l2object->dbg_obj, "cfg dw mode to %d", decParm->cfg.double_write_mode);
-
-        // decParm->cfg.double_write_mode = 0x03;
-        decParm->parms_status |= V4L2_CONFIG_PARM_DECODE_CFGINFO;
-
         decParm->cfg.ref_buf_margin = GST_AML_V4L2_DEFAULT_CAP_BUF_MARGIN;
-
-        if (uname(&info) || sscanf(info.release, "%d.%d", &major, &minor) <= 0)
-        {
-            GST_DEBUG("get linux version failed");
-        }
-        GST_DEBUG("linux  major version %d %d", major,minor);
-
-        use_ext_config = ((major == 5 && minor >= 15) || major >= 6) ? TRUE: FALSE;
-
-        if (use_ext_config)
-        {
-            memset(&ctrls, 0, sizeof(ctrls));
-            memset(&control, 0, sizeof(control));
-            control.id = AML_V4L2_DEC_PARMS_CONFIG;
-            control.ptr = decParm;
-            control.size = sizeof(struct aml_dec_params);
-            ctrls.count = 1;
-            ctrls.controls = &control;
-            if (v4l2object->ioctl( v4l2object->video_fd, VIDIOC_S_EXT_CTRLS, &ctrls ) <0)
-            {
-                GST_DEBUG_OBJECT(v4l2object->dbg_obj, "set vdec parm fail");
-            }
-            else
-            {
-                GST_DEBUG_OBJECT(v4l2object->dbg_obj, "set dwMode to %d, margin to %d", decParm->cfg.double_write_mode, decParm->cfg.ref_buf_margin);
-            }
-         }
-        else
-        {
-            if (v4l2object->ioctl(v4l2object->video_fd, VIDIOC_S_PARM, streamparm) < 0)
-            {
-                GST_DEBUG_OBJECT(v4l2object->dbg_obj, "set vdec parm fail");
-            }
-            else
-            {
-                GST_DEBUG_OBJECT(v4l2object->dbg_obj, "Set dwMode to %d, margin to %d", decParm->cfg.double_write_mode, decParm->cfg.ref_buf_margin);
-            }
-        }
 
         GstStructure *structure= gst_caps_get_structure(caps, 0);
         if (structure == NULL)
         {
             return;
         }
+
+        // dv
+        gboolean dv_bl_present_flag, dv_el_present_flag;
+        int dvBaseLayerPresent = -1;
+        int dvEnhancementLayerPresent = -1;
+        /* have base and enhancement layers both, that means its dual layer,
+        dv two layer flag will be true */
+        if (gst_structure_get_boolean( structure, "dv_bl_present_flag", &dv_bl_present_flag))
+        {
+            dvBaseLayerPresent= dv_bl_present_flag?1:0;
+        }
+        if (gst_structure_get_boolean( structure, "dv_el_present_flag", &dv_el_present_flag))
+        {
+            dvEnhancementLayerPresent= dv_el_present_flag?1:0;
+        }
+
+        /* have base and enhancement layers both, that means its dual layer, dv two layer flag will be true */
+        if ( (dvBaseLayerPresent == 1) && (dvEnhancementLayerPresent == 1) )
+        {
+            decParm->cfg.metadata_config_flag |= (1 << 0);
+        }
+        else
+        {
+            decParm->cfg.metadata_config_flag |= (0 << 0);
+        }
+
+        /* have one of then, it's standard dv stream, Non-standard dv flag will be false */
+        if ( (dvBaseLayerPresent == 0) && (dvEnhancementLayerPresent == 0) )
+        {
+            decParm->cfg.metadata_config_flag |= (1 << 1);
+        }
+        else
+        {
+            decParm->cfg.metadata_config_flag |= (0 << 1);
+        }
+
+        // HDR
         if ( gst_structure_has_field(structure, "colorimetry") )
         {
             const char *colorimetry= gst_structure_get_string(structure,"colorimetry");
@@ -3765,6 +3812,56 @@ set_amlogic_vdec_parm(GstAmlV4l2Object *v4l2object, struct v4l2_streamparm *stre
             }
             GST_DEBUG_OBJECT(v4l2object->dbg_obj, "caps after remove mastering-display-metadata %" GST_PTR_FORMAT, caps);
         }
+
+        if (uname(&info) || sscanf(info.release, "%d.%d", &major, &minor) <= 0)
+        {
+            GST_DEBUG("get linux version failed");
+        }
+        GST_DEBUG("linux  major version %d %d", major,minor);
+
+        use_ext_config = ((major == 5 && minor >= 15) || major >= 6) ? TRUE: FALSE;
+
+        if (use_ext_config)
+        {
+            memset(&ctrls, 0, sizeof(ctrls));
+            memset(&control, 0, sizeof(control));
+            control.id = AML_V4L2_DEC_PARMS_CONFIG;
+            control.ptr = decParm;
+            control.size = sizeof(struct aml_dec_params);
+            ctrls.count = 1;
+            ctrls.controls = &control;
+            if (v4l2object->ioctl( v4l2object->video_fd, VIDIOC_S_EXT_CTRLS, &ctrls ) <0)
+            {
+                GST_DEBUG_OBJECT(v4l2object->dbg_obj, "set vdec parm fail");
+            }
+            else
+            {
+                GST_DEBUG_OBJECT(v4l2object->dbg_obj, "set dwMode to %d, margin to %d", decParm->cfg.double_write_mode, decParm->cfg.ref_buf_margin);
+            }
+        }
+        else
+        {
+            if (v4l2object->ioctl(v4l2object->video_fd, VIDIOC_S_PARM, streamparm) < 0)
+            {
+                GST_DEBUG_OBJECT(v4l2object->dbg_obj, "set vdec parm fail");
+            }
+            else
+            {
+                GST_DEBUG_OBJECT(v4l2object->dbg_obj, "Set dwMode to %d, margin to %d", decParm->cfg.double_write_mode, decParm->cfg.ref_buf_margin);
+            }
+        }
+    }
+    else if (v4l2object->type == V4L2_BUF_TYPE_VBI_CAPTURE || v4l2object->type == V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE)
+    {
+         if (needSpecConfigForFg(v4l2object))
+         {
+            decParm->cfg.double_write_mode= VDEC_DW_MMU_1;
+            GST_DEBUG_OBJECT(v4l2object->dbg_obj,"set fg dw mode %d", decParm->cfg.double_write_mode);
+         }
+    }
+    else
+    {
+        GST_ERROR_OBJECT(v4l2object->dbg_obj,"can't deal with. please check flow");
     }
 }
 

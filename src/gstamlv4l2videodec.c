@@ -1116,7 +1116,7 @@ gst_aml_v4l2_video_dec_loop(GstVideoDecoder *decoder)
             }
             GST_BUFFER_FLAG_UNSET(buffer, GST_VIDEO_BUFFER_FLAG_INTERLACED);
             //reset pts
-            if (GST_BUFFER_TIMESTAMP (buffer) == 0LL || self->last_out_pts == GST_BUFFER_TIMESTAMP (buffer))
+            if (GST_BUFFER_TIMESTAMP (buffer) == 0LL)
             {
                 double rate = ((double)self->input_state->info.fps_n/(double)self->input_state->info.fps_d)*2;
                 GST_BUFFER_TIMESTAMP(buffer) = self->last_out_pts + 1000000000LL/rate;

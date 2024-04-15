@@ -20,8 +20,6 @@
 #ifndef __AML_VDEC_H__
 #define __AML_VDEC_H__
 
-#define V4L2_CONFIG_PARM_DECODE_CFGINFO (1 << 0)
-
 typedef unsigned int uint32_t;
 
 enum vdec_dw_mode
@@ -32,6 +30,10 @@ enum vdec_dw_mode
     VDEC_DW_AFBC_x2_1_4_DW = 3,
     VDEC_DW_AFBC_1_2_DW = 4,
     VDEC_DW_NO_AFBC = 16,
+    /* MMU Double Write Mode for filmgrain*/
+    VDEC_DW_MMU_1 = 0x21,
+    VDEC_DW_MMU_1_4 = 0x22,
+    VDEC_DW_MMU_1_2 = 0x24,
     VDEC_DW_AFBC_AUTO_1_2 = 0x100,
     VDEC_DW_AFBC_AUTO_1_4 = 0x200,
 };
